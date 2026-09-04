@@ -5,24 +5,29 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 
+# تفعيل دعم أندرويد لـ Vulkan
+add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
+
 include_directories(
     ${ANDROID_NDK}/sources/android/native_app_glue
     src
 )
 
-file(GLOB_RECURSE SOURCES 
-    "src/*.cpp"
-    "src/*.h"
+# تحديد ملفات المحرك الجديد فقط بدون تضارب
+set(SOURCES
+    src/main.cpp
+    src/camera.cpp
+    src/gizmo.cpp
+    src/vulkan_renderer.cpp
+    ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
 )
 
 add_library(render_engine SHARED
     ${SOURCES}
-    ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
 )
 
 target_link_options(render_engine PRIVATE "-Wl,-u,ANativeActivity_onCreate")
 
-# ربط محرك Vulkan الصافي مع نظام أندرويد
 target_link_libraries(render_engine
     android
     log
