@@ -1,9 +1,9 @@
 #include <android_native_app_glue.h>
 #include <android/input.h>
-#include "renderer.h"
+#include "vulkan_renderer.h"
 
 struct AppState {
-    Renderer renderer;
+    VulkanRenderer renderer;
     bool animating = false;
     float lastX = 0, lastY = 0;
     bool dragging = false;
@@ -39,12 +39,12 @@ static void onCmd(struct android_app* app, int32_t cmd) {
     switch (cmd) {
         case APP_CMD_INIT_WINDOW:
             if (app->window != nullptr) {
-                s->renderer.initEGL(app->window);
+                s->renderer.init(app->window);
                 s->animating = true;
             }
             break;
         case APP_CMD_TERM_WINDOW:
-            s->renderer.destroyEGL();
+            s->renderer.cleanup();
             s->animating = false;
             break;
         case APP_CMD_GAINED_FOCUS:
@@ -70,7 +70,7 @@ void android_main(struct android_app* app) {
         while ((ident = ALooper_pollOnce(state.animating ? 0 : -1, nullptr, &events, (void**)&source)) >= 0) {
             if (source != nullptr) source->process(app, source);
             if (app->destroyRequested != 0) {
-                state.renderer.destroyEGL();
+                state.renderer.cleanup();
                 return;
             }
         }
