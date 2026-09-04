@@ -1,6 +1,7 @@
 #pragma once
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
+#include <android/native_window.h>
 #include "camera.h"
 #include "mesh.h"
 #include "gizmo.h"
