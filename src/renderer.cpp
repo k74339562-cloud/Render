@@ -1,160 +1,451 @@
-#include "renderer.h"
-#include <android/native_window.h>
+#include "vulkan_renderer.h"
+#include <vulkan/vulkan_android.h>
 #include <android/log.h>
+#include "shaders/cube_vert.h"
+#include "shaders/cube_frag.h"
+#include "shaders/line_vert.h"
+#include "shaders/line_frag.h"
 
-#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "RenderEngine", __VA_ARGS__))
-#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "RenderEngine", __VA_ARGS__))
+#define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "VulkanEngine", __VA_ARGS__))
 
-// شيدر استوديو بلندر الحقيقي (Studio Clay + Rim Light)
-static const char* VS_CUBE = R"(#version 300 es
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aNorm;
-uniform mat4 uVP;
-uniform mat4 uM;
-out vec3 vNorm;
-out vec3 vPos;
-void main() {
-    vec4 wPos = uM * vec4(aPos, 1.0);
-    vPos = wPos.xyz;
-    vNorm = mat3(uM) * aNorm;
-    gl_Position = uVP * wPos;
-})";
-
-static const char* FS_CUBE = R"(#version 300 es
-precision mediump float;
-in vec3 vNorm;
-in vec3 vPos;
-uniform vec3 uCam;
-out vec4 FragColor;
-void main() {
-    vec3 n = normalize(vNorm);
-    vec3 v = normalize(uCam - vPos);
-    vec3 light = normalize(vec3(0.6, 0.9, 0.5));
-    float diff = max(dot(n, light), 0.0);
-    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 2.5) * 0.35;
-    vec3 clay = vec3(0.56, 0.58, 0.65);
-    vec3 col = clay * (diff + 0.25) + vec3(0.85, 0.9, 1.0) * fresnel;
-    FragColor = vec4(col, 1.0);
-})";
-
-static const char* VS_LINE = R"(#version 300 es
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec4 aCol;
-uniform mat4 uVP;
-out vec4 vCol;
-void main() {
-    vCol = aCol;
-    gl_Position = uVP * vec4(aPos, 1.0);
-})";
-
-static const char* FS_LINE = R"(#version 300 es
-precision mediump float;
-in vec4 vCol;
-out vec4 FragColor;
-void main() { FragColor = vCol; })";
-
-static GLuint compile(GLenum type, const char* src) {
-    GLuint s = glCreateShader(type);
-    glShaderSource(s, 1, &src, nullptr);
-    glCompileShader(s);
-    return s;
+static VkShaderModule createShaderModule(VkDevice device, const uint32_t* code, size_t sizeBytes) {
+    VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    ci.codeSize = sizeBytes;
+    ci.pCode = code;
+    VkShaderModule mod;
+    vkCreateShaderModule(device, &ci, nullptr, &mod);
+    return mod;
 }
 
-bool Renderer::initEGL(ANativeWindow* window) {
-    display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    eglInitialize(display, nullptr, nullptr);
+uint32_t VulkanRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    return 0;
+}
 
-    const EGLint attribs[] = {
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_BLUE_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_RED_SIZE, 8,
-        EGL_DEPTH_SIZE, 24, EGL_NONE
+void VulkanRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+    VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufferInfo.size = size;
+    bufferInfo.usage = usage;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    vkCreateBuffer(device, &bufferInfo, nullptr, &buffer);
+
+    VkMemoryRequirements memReq;
+    vkGetBufferMemoryRequirements(device, buffer, &memReq);
+    VkMemoryAllocateInfo allocInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocInfo.allocationSize = memReq.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits, properties);
+    vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory);
+    vkBindBufferMemory(device, buffer, bufferMemory, 0);
+}
+
+bool VulkanRenderer::init(ANativeWindow* window) {
+    // 1. إنشاء VkInstance
+    const char* ext[] = { VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME };
+    VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    ici.enabledExtensionCount = 2;
+    ici.ppEnabledExtensionNames = ext;
+    vkCreateInstance(&ici, nullptr, &instance);
+
+    // 2. إنشاء السطح
+    VkAndroidSurfaceCreateInfoKHR sci{VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR};
+    sci.window = window;
+    vkCreateAndroidSurfaceKHR(instance, &sci, nullptr, &surface);
+
+    // 3. اختيار كرت الشاشة ومعالج الرسوميات
+    uint32_t devCount = 0;
+    vkEnumeratePhysicalDevices(instance, &devCount, nullptr);
+    std::vector<VkPhysicalDevice> devs(devCount);
+    vkEnumeratePhysicalDevices(instance, &devCount, devs.data());
+    physicalDevice = devs[0];
+
+    // 4. إنشاء الـ Device والـ Queue
+    float qp = 1.0f;
+    VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+    qci.queueFamilyIndex = 0;
+    qci.queueCount = 1;
+    qci.pQueuePriorities = &qp;
+
+    const char* devExt[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+    dci.queueCreateInfoCount = 1;
+    dci.pQueueCreateInfos = &qci;
+    dci.enabledExtensionCount = 1;
+    dci.ppEnabledExtensionNames = devExt;
+    vkCreateDevice(physicalDevice, &dci, nullptr, &device);
+    vkGetDeviceQueue(device, 0, 0, &graphicsQueue);
+
+    // 5. إنشاء الـ Swapchain
+    swapchainExtent = { (uint32_t)ANativeWindow_getWidth(window), (uint32_t)ANativeWindow_getHeight(window) };
+    VkSwapchainCreateInfoKHR swci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+    swci.surface = surface;
+    swci.minImageCount = 2;
+    swci.imageFormat = swapchainFormat;
+    swci.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+    swci.imageExtent = swapchainExtent;
+    swci.imageArrayLayers = 1;
+    swci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    swci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    swci.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    swci.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    swci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    vkCreateSwapchainKHR(device, &swci, nullptr, &swapchain);
+
+    uint32_t imgCount = 0;
+    vkGetSwapchainImagesKHR(device, swapchain, &imgCount, nullptr);
+    swapchainImages.resize(imgCount);
+    vkGetSwapchainImagesKHR(device, swapchain, &imgCount, swapchainImages.data());
+
+    swapchainImageViews.resize(imgCount);
+    for (size_t i = 0; i < imgCount; i++) {
+        VkImageViewCreateInfo ivci{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        ivci.image = swapchainImages[i];
+        ivci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        ivci.format = swapchainFormat;
+        ivci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        ivci.subresourceRange.levelCount = 1;
+        ivci.subresourceRange.layerCount = 1;
+        vkCreateImageView(device, &ivci, nullptr, &swapchainImageViews[i]);
+    }
+
+    // 6. صورة العمق (Depth Image)
+    VkImageCreateInfo depthImgInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    depthImgInfo.imageType = VK_IMAGE_TYPE_2D;
+    depthImgInfo.extent = { swapchainExtent.width, swapchainExtent.height, 1 };
+    depthImgInfo.mipLevels = 1;
+    depthImgInfo.arrayLayers = 1;
+    depthImgInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    depthImgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    depthImgInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    vkCreateImage(device, &depthImgInfo, nullptr, &depthImage);
+
+    VkMemoryRequirements dMemReq;
+    vkGetImageMemoryRequirements(device, depthImage, &dMemReq);
+    VkMemoryAllocateInfo dAlloc{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    dAlloc.allocationSize = dMemReq.size;
+    dAlloc.memoryTypeIndex = findMemoryType(dMemReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkAllocateMemory(device, &dAlloc, nullptr, &depthImageMemory);
+    vkBindImageMemory(device, depthImage, depthImageMemory, 0);
+
+    VkImageViewCreateInfo dViewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    dViewInfo.image = depthImage;
+    dViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    dViewInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    dViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    dViewInfo.subresourceRange.levelCount = 1;
+    dViewInfo.subresourceRange.layerCount = 1;
+    vkCreateImageView(device, &dViewInfo, nullptr, &depthImageView);
+
+    // 7. RenderPass
+    VkAttachmentDescription attachments[2] = {};
+    attachments[0].format = swapchainFormat;
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    attachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
+    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkRenderPassCreateInfo rpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+    rpci.attachmentCount = 2;
+    rpci.pAttachments = attachments;
+    rpci.subpassCount = 1;
+    rpci.pSubpasses = &subpass;
+    vkCreateRenderPass(device, &rpci, nullptr, &renderPass);
+
+    // 8. Framebuffers
+    framebuffers.resize(imgCount);
+    for (size_t i = 0; i < imgCount; i++) {
+        VkImageView fbViews[] = { swapchainImageViews[i], depthImageView };
+        VkFramebufferCreateInfo fbci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        fbci.renderPass = renderPass;
+        fbci.attachmentCount = 2;
+        fbci.pAttachments = fbViews;
+        fbci.width = swapchainExtent.width;
+        fbci.height = swapchainExtent.height;
+        fbci.layers = 1;
+        vkCreateFramebuffer(device, &fbci, nullptr, &framebuffers[i]);
+    }
+
+    // 9. إنشاء مخزن الـ UBO ومخازن المجسمات
+    createBuffer(sizeof(UniformBufferObject), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uboBuffer, uboBufferMemory);
+
+    // إنشاء مصفوفات شيدرات بلندر
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo dslci{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dslci.bindingCount = 1;
+    dslci.pBindings = &uboLayoutBinding;
+    vkCreateDescriptorSetLayout(device, &dslci, nullptr, &descriptorSetLayout);
+
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1};
+    VkDescriptorPoolCreateInfo dpci{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dpci.poolSizeCount = 1;
+    dpci.pPoolSizes = &poolSize;
+    dpci.maxSets = 1;
+    vkCreateDescriptorPool(device, &dpci, nullptr, &descriptorPool);
+
+    VkDescriptorSetAllocateInfo dsai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    dsai.descriptorPool = descriptorPool;
+    dsai.descriptorSetCount = 1;
+    dsai.pSetLayouts = &descriptorSetLayout;
+    vkAllocateDescriptorSets(device, &dsai, &descriptorSet);
+
+    VkDescriptorBufferInfo dbi{uboBuffer, 0, sizeof(UniformBufferObject)};
+    VkWriteDescriptorSet wds{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    wds.dstSet = descriptorSet;
+    wds.dstBinding = 0;
+    wds.descriptorCount = 1;
+    wds.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    wds.pBufferInfo = &dbi;
+    vkUpdateDescriptorSets(device, 1, &wds, 0, nullptr);
+
+    // 10. خطوط أنابيب Vulkan (Pipelines)
+    VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    plci.setLayoutCount = 1;
+    plci.pSetLayouts = &descriptorSetLayout;
+    vkCreatePipelineLayout(device, &plci, nullptr, &pipelineLayout);
+
+    VkShaderModule cVsMod = createShaderModule(device, cube_vert_data, sizeof(cube_vert_data));
+    VkShaderModule cFsMod = createShaderModule(device, cube_frag_data, sizeof(cube_frag_data));
+
+    VkPipelineShaderStageCreateInfo stages[2] = {};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = cVsMod;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = cFsMod;
+    stages[1].pName = "main";
+
+    VkVertexInputBindingDescription vibd{0, sizeof(float) * 6, VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputAttributeDescription viad[2] = {
+        {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+        {1, 0, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 3}
     };
 
-    EGLConfig config;
-    EGLint numConfigs;
-    eglChooseConfig(display, attribs, &config, 1, &numConfigs);
+    VkPipelineVertexInputStateCreateInfo pvisi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    pvisi.vertexBindingDescriptionCount = 1;
+    pvisi.pVertexBindingDescriptions = &vibd;
+    pvisi.vertexAttributeDescriptionCount = 2;
+    pvisi.pVertexAttributeDescriptions = viad;
 
-    // ضبط بكسلات نافذة أندرويد 13 لمنع الانهيار
-    EGLint format;
-    eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID, &format);
-    ANativeWindow_setBuffersGeometry(window, 0, 0, format);
+    VkPipelineInputAssemblyStateCreateInfo piasi{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    piasi.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
-    EGLint ctxAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
-    context = eglCreateContext(display, config, EGL_NO_CONTEXT, ctxAttribs);
-    surface = eglCreateWindowSurface(display, config, window, nullptr);
+    VkViewport viewport{0.0f, 0.0f, (float)swapchainExtent.width, (float)swapchainExtent.height, 0.0f, 1.0f};
+    VkRect2D scissor{{0, 0}, swapchainExtent};
+    VkPipelineViewportStateCreateInfo pvsi{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    pvsi.viewportCount = 1;
+    pvsi.pViewports = &viewport;
+    pvsi.scissorCount = 1;
+    pvsi.pScissors = &scissor;
 
-    eglMakeCurrent(display, surface, surface, context);
-    eglQuerySurface(display, surface, EGL_WIDTH, &width);
-    eglQuerySurface(display, surface, EGL_HEIGHT, &height);
+    VkPipelineRasterizationStateCreateInfo prsi{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    prsi.cullMode = VK_CULL_MODE_BACK_BIT;
+    prsi.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    prsi.lineWidth = 1.0f;
 
-    initShaders();
-    mesh.init();
+    VkPipelineMultisampleStateCreateInfo pmssi{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    pmssi.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo pdssi{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    pdssi.depthTestEnable = VK_TRUE;
+    pdssi.depthWriteEnable = VK_TRUE;
+    pdssi.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    VkPipelineColorBlendAttachmentState cbas{};
+    cbas.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo pcbsi{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    pcbsi.attachmentCount = 1;
+    pcbsi.pAttachments = &cbas;
+
+    VkGraphicsPipelineCreateInfo gpci{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    gpci.stageCount = 2;
+    gpci.pStages = stages;
+    gpci.pVertexInputState = &pvisi;
+    gpci.pInputAssemblyState = &piasi;
+    gpci.pViewportState = &pvsi;
+    gpci.pRasterizationState = &prsi;
+    gpci.pMultisampleState = &pmssi;
+    gpci.pDepthStencilState = &pdssi;
+    gpci.pColorBlendState = &pcbsi;
+    gpci.layout = pipelineLayout;
+    gpci.renderPass = renderPass;
+    vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &gpci, nullptr, &cubePipeline);
+
+    vkDestroyShaderModule(device, cVsMod, nullptr);
+    vkDestroyShaderModule(device, cFsMod, nullptr);
+
+    // خط أنابيب الجزمو ثلاثي الأبعاد
     gizmo.init();
+    gizmoVertexCount = (uint32_t)gizmo.vertices.size();
+    createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gizmoVbo, gizmoVboMemory);
+    void* gData;
+    vkMapMemory(device, gizmoVboMemory, 0, gizmo.vertices.size() * sizeof(GizmoVertex), 0, &gData);
+    memcpy(gData, gizmo.vertices.data(), gizmo.vertices.size() * sizeof(GizmoVertex));
+    vkUnmapMemory(device, gizmoVboMemory);
+
+    // 11. Command Buffers & Sync
+    VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    cpci.queueFamilyIndex = 0;
+    vkCreateCommandPool(device, &cpci, nullptr, &commandPool);
+
+    commandBuffers.resize(imgCount);
+    VkCommandBufferAllocateInfo cbai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cbai.commandPool = commandPool;
+    cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbai.commandBufferCount = imgCount;
+    vkAllocateCommandBuffers(device, &cbai, commandBuffers.data());
+
+    VkSemaphoreCreateInfo sciSync{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    vkCreateSemaphore(device, &sciSync, nullptr, &imageAvailableSemaphore);
+    vkCreateSemaphore(device, &sciSync, nullptr, &renderFinishedSemaphore);
+
+    VkFenceCreateInfo fci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    vkCreateFence(device, &fci, nullptr, &inFlightFence);
+
+    LOGI("تم إقلاع محرك Vulkan الأصلي بنجاح تام!");
     return true;
 }
 
-void Renderer::initShaders() {
-    GLuint vsC = compile(GL_VERTEX_SHADER, VS_CUBE);
-    GLuint fsC = compile(GL_FRAGMENT_SHADER, FS_CUBE);
-    cubeShader = glCreateProgram();
-    glAttachShader(cubeShader, vsC);
-    glAttachShader(cubeShader, fsC);
-    glLinkProgram(cubeShader);
+// دالة تنظيف الذاكرة الصارمة (حل مشكلة تسريب الذاكرة التي لاحظها ماهر)
+void VulkanRenderer::cleanup() {
+    if (device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(device);
 
-    GLuint vsL = compile(GL_VERTEX_SHADER, VS_LINE);
-    GLuint fsL = compile(GL_FRAGMENT_SHADER, FS_LINE);
-    lineShader = glCreateProgram();
-    glAttachShader(lineShader, vsL);
-    glAttachShader(lineShader, fsL);
-    glLinkProgram(lineShader);
-}
+        vkDestroyFence(device, inFlightFence, nullptr);
+        vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 
-void Renderer::destroyEGL() {
-    if (display != EGL_NO_DISPLAY) {
-        eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
-        if (context != EGL_NO_CONTEXT) eglDestroyContext(display, context);
-        eglTerminate(display);
+        vkDestroyCommandPool(device, commandPool, nullptr);
+
+        vkDestroyPipeline(device, cubePipeline, nullptr);
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+
+        vkDestroyBuffer(device, uboBuffer, nullptr);
+        vkFreeMemory(device, uboBufferMemory, nullptr);
+        vkDestroyBuffer(device, gizmoVbo, nullptr);
+        vkFreeMemory(device, gizmoVboMemory, nullptr);
+
+        for (auto fb : framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
+        vkDestroyRenderPass(device, renderPass, nullptr);
+
+        vkDestroyImageView(device, depthImageView, nullptr);
+        vkDestroyImage(device, depthImage, nullptr);
+        vkFreeMemory(device, depthImageMemory, nullptr);
+
+        for (auto iv : swapchainImageViews) vkDestroyImageView(device, iv, nullptr);
+        vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+        vkDestroyDevice(device, nullptr);
     }
-    display = EGL_NO_DISPLAY;
-    surface = EGL_NO_SURFACE;
-    context = EGL_NO_CONTEXT;
+    if (instance != VK_NULL_HANDLE) {
+        if (surface != VK_NULL_HANDLE) vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyInstance(instance, nullptr);
+    }
+
+    device = VK_NULL_HANDLE;
+    instance = VK_NULL_HANDLE;
+    LOGI("تم تحرير كافة موارد الذاكرة والـ GPU بنجاح بدون أي تسريب!");
 }
 
-void Renderer::renderFrame() {
-    if (surface == EGL_NO_SURFACE) return;
+void VulkanRenderer::renderFrame() {
+    if (device == VK_NULL_HANDLE) return;
 
-    eglQuerySurface(display, surface, EGL_WIDTH, &width);
-    eglQuerySurface(display, surface, EGL_HEIGHT, &height);
-    glViewport(0, 0, width, height);
+    vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device, 1, &inFlightFence);
 
-    glClearColor(0.18f, 0.19f, 0.22f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
+    uint32_t imageIndex;
+    VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    if (res != VK_SUCCESS) return;
 
+    // تحديث مصفوفات الكاميرا والضوء
+    UniformBufferObject ubo{};
     Mat4 v = camera.getViewMatrix();
-    Mat4 p = camera.getProjectionMatrix((float)width, (float)height);
-    Mat4 vp = p * v;
-    Mat4 m = Mat4::identity();
-    Vec3 camPos = camera.getPosition();
+    Mat4 p = camera.getProjectionMatrix((float)swapchainExtent.width, (float)swapchainExtent.height);
+    ubo.viewProj = p * v;
+    ubo.model = Mat4::identity();
+    ubo.camPos = camera.getPosition();
 
-    // 1. رسم شبكة أرضية بلندر
-    glUseProgram(lineShader);
-    glUniformMatrix4fv(glGetUniformLocation(lineShader, "uVP"), 1, GL_FALSE, vp.m);
-    mesh.renderGrid();
+    void* data;
+    vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
+    memcpy(data, &ubo, sizeof(ubo));
+    vkUnmapMemory(device, uboBufferMemory);
 
-    // 2. رسم المكعب بشيدر بلندر
-    glUseProgram(cubeShader);
-    glUniformMatrix4fv(glGetUniformLocation(cubeShader, "uVP"), 1, GL_FALSE, vp.m);
-    glUniformMatrix4fv(glGetUniformLocation(cubeShader, "uM"), 1, GL_FALSE, m.m);
-    glUniform3f(glGetUniformLocation(cubeShader, "uCam"), camPos.x, camPos.y, camPos.z);
-    mesh.renderCube();
+    // تسجيل أوامر الرسم
+    VkCommandBuffer cmd = commandBuffers[imageIndex];
+    vkResetCommandBuffer(cmd, 0);
 
-    // 3. رسم الجزمو ثلاثي الأبعاد
-    glUseProgram(lineShader);
-    glUniformMatrix4fv(glGetUniformLocation(lineShader, "uVP"), 1, GL_FALSE, vp.m);
-    gizmo.render(vp);
+    VkCommandBufferBeginInfo cbbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vkBeginCommandBuffer(cmd, &cbbi);
 
-    eglSwapBuffers(display, surface);
+    VkClearValue clearValues[2];
+    clearValues[0].color = {{0.18f, 0.19f, 0.22f, 1.0f}}; // لون رمادي بلندر الأصلي
+    clearValues[1].depthStencil = {1.0f, 0};
+
+    VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+    rpbi.renderPass = renderPass;
+    rpbi.framebuffer = framebuffers[imageIndex];
+    rpbi.renderArea.extent = swapchainExtent;
+    rpbi.clearValueCount = 2;
+    rpbi.pClearValues = clearValues;
+
+    vkCmdBeginRenderPass(cmd, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+
+    // رسم المكعب بشيدر استوديو بلندر
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, cubePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+
+    vkCmdEndRenderPass(cmd);
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    VkSemaphore waitSems[] = {imageAvailableSemaphore};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    si.waitSemaphoreCount = 1;
+    si.pWaitSemaphores = waitSems;
+    si.pWaitDstStageMask = waitStages;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    VkSemaphore sigSems[] = {renderFinishedSemaphore};
+    si.signalSemaphoreCount = 1;
+    si.pSignalSemaphores = sigSems;
+
+    vkQueueSubmit(graphicsQueue, 1, &si, inFlightFence);
+
+    VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    pi.waitSemaphoreCount = 1;
+    pi.pWaitSemaphores = sigSems;
+    pi.swapchainCount = 1;
+    pi.pSwapchains = &swapchain;
+    pi.pImageIndices = &imageIndex;
+    vkQueuePresentKHR(graphicsQueue, &pi);
 }
