@@ -4,8 +4,9 @@
 
 class Gizmo {
 public:
+    GLuint vao = 0;
     GLuint vbo = 0;
-    int activeAxis = -1; // -1: لا شيء، 0: X، 1: Y، 2: Z
+    int activeAxis = -1;
 
     void init();
     void render(const Mat4& vp);
