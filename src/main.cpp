@@ -1,34 +1,78 @@
 #include <android_native_app_glue.h>
 #include <android/input.h>
+#include <cmath>
 #include "vulkan_renderer.h"
 
 struct AppState {
     VulkanRenderer renderer;
     bool animating = false;
     float lastX = 0, lastY = 0;
-    bool dragging = false;
+    float lastPinchDist = 0.0f;
+    bool isPinching = false;
+    bool isDragging = false;
 };
+
+static float getDist(float x1, float y1, float x2, float y2) {
+    float dx = x1 - x2;
+    float dy = y1 - y2;
+    return std::sqrt(dx * dx + dy * dy);
+}
 
 static int32_t onInput(struct android_app* app, AInputEvent* event) {
     auto* s = (AppState*)app->userData;
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
-        int action = AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK;
-        float x = AMotionEvent_getX(event, 0);
-        float y = AMotionEvent_getY(event, 0);
+        int action = AMotionEvent_getAction(event);
+        int actionMasked = action & AMOTION_EVENT_ACTION_MASK;
+        size_t pointerCount = AMotionEvent_getPointerCount(event);
 
-        if (action == AMOTION_EVENT_ACTION_DOWN) {
-            s->lastX = x; s->lastY = y;
-            s->dragging = true;
-            return 1;
-        } else if (action == AMOTION_EVENT_ACTION_MOVE && s->dragging) {
-            float dx = x - s->lastX;
-            float dy = y - s->lastY;
-            s->renderer.camera.onRotate(dx, dy);
-            s->lastX = x; s->lastY = y;
-            return 1;
-        } else if (action == AMOTION_EVENT_ACTION_UP) {
-            s->dragging = false;
-            return 1;
+        if (pointerCount == 1) {
+            float x = AMotionEvent_getX(event, 0);
+            float y = AMotionEvent_getY(event, 0);
+
+            if (actionMasked == AMOTION_EVENT_ACTION_DOWN) {
+                s->lastX = x; s->lastY = y;
+                s->isDragging = true;
+                s->isPinching = false;
+                return 1;
+            } else if (actionMasked == AMOTION_EVENT_ACTION_MOVE && s->isDragging && !s->isPinching) {
+                float dx = x - s->lastX;
+                float dy = y - s->lastY;
+                s->renderer.camera.onRotate(dx, dy);
+                s->lastX = x; s->lastY = y;
+                return 1;
+            } else if (actionMasked == AMOTION_EVENT_ACTION_UP) {
+                s->isDragging = false;
+                return 1;
+            }
+        } else if (pointerCount >= 2) {
+            float x0 = AMotionEvent_getX(event, 0);
+            float y0 = AMotionEvent_getY(event, 0);
+            float x1 = AMotionEvent_getX(event, 1);
+            float y1 = AMotionEvent_getY(event, 1);
+            float curDist = getDist(x0, y0, x1, y1);
+
+            if (actionMasked == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+                s->lastPinchDist = curDist;
+                s->lastX = (x0 + x1) * 0.5f;
+                s->lastY = (y0 + y1) * 0.5f;
+                s->isPinching = true;
+                return 1;
+            } else if (actionMasked == AMOTION_EVENT_ACTION_MOVE && s->isPinching) {
+                // تكبير وتصغير سلس بإصبعين
+                float deltaDist = curDist - s->lastPinchDist;
+                s->renderer.camera.onZoom(deltaDist * 1.5f);
+                s->lastPinchDist = curDist;
+
+                // تحريك الكاميرا (Pan) بإصبعين
+                float midX = (x0 + x1) * 0.5f;
+                float midY = (y0 + y1) * 0.5f;
+                s->renderer.camera.onPan(midX - s->lastX, midY - s->lastY);
+                s->lastX = midX; s->lastY = midY;
+                return 1;
+            } else if (actionMasked == AMOTION_EVENT_ACTION_POINTER_UP) {
+                s->isPinching = false;
+                return 1;
+            }
         }
     }
     return 0;
