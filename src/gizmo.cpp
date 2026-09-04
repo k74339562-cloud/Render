@@ -16,26 +16,31 @@ void Gizmo::init() {
         {0, 0, 0, 0.20f, 0.45f, 0.98f}, {0, 0, len, 0.20f, 0.45f, 0.98f}
     };
 
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(lines), lines, GL_STATIC_DRAW);
-}
 
-void Gizmo::render(const Mat4& vp) {
-    (void)vp;
-    glDisable(GL_DEPTH_TEST); // إظهار الجزمو دائماً فوق المكعب
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GizmoVertex), (void*)0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GizmoVertex), (void*)(3 * sizeof(float)));
 
-    glLineWidth(4.0f);
+    glBindVertexArray(0);
+}
+
+void Gizmo::render(const Mat4& vp) {
+    (void)vp;
+    glDisable(GL_DEPTH_TEST);
+    glBindVertexArray(vao);
+    glLineWidth(5.0f);
     glDrawArrays(GL_LINES, 0, 6);
+    glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);
 }
 
 void Gizmo::checkHit(const Vec3& rayOrigin, const Vec3& rayDir, const Vec3& cubePos) {
-    // رياضيات تفاعل الأشعة
     (void)rayOrigin; (void)rayDir; (void)cubePos;
 }
