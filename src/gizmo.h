@@ -9,8 +9,7 @@ struct GizmoVertex {
 
 class Gizmo {
 public:
-    std::vector<GizmoVertex> vertices;
+    std::vector<GizmoVertex> coneVertices;
 
     void init();
-    Mat4 getTransform(const Vec3& cubePos, float camDist) const;
 };
