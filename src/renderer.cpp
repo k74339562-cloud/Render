@@ -1,9 +1,11 @@
 #include "renderer.h"
+#include <android/native_window.h>
 #include <android/log.h>
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "RenderEngine", __VA_ARGS__))
 #define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "RenderEngine", __VA_ARGS__))
 
+// شيدر استوديو بلندر الحقيقي (Studio Clay + Rim Light)
 static const char* VS_CUBE = R"(#version 300 es
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNorm;
@@ -73,7 +75,7 @@ bool Renderer::initEGL(ANativeWindow* window) {
     EGLint numConfigs;
     eglChooseConfig(display, attribs, &config, 1, &numConfigs);
 
-    // خطوة حرجة لأندرويد 13 لمنع الانهيار: محاذاة بكسلات النافذة مع الكرت
+    // ضبط بكسلات نافذة أندرويد 13 لمنع الانهيار
     EGLint format;
     eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID, &format);
     ANativeWindow_setBuffersGeometry(window, 0, 0, format);
@@ -137,7 +139,7 @@ void Renderer::renderFrame() {
     Mat4 m = Mat4::identity();
     Vec3 camPos = camera.getPosition();
 
-    // 1. رسم شبكة الأرضية
+    // 1. رسم شبكة أرضية بلندر
     glUseProgram(lineShader);
     glUniformMatrix4fv(glGetUniformLocation(lineShader, "uVP"), 1, GL_FALSE, vp.m);
     mesh.renderGrid();
