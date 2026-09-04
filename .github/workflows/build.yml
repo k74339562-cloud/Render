@@ -1,6 +1,5 @@
 name: Build C++ Android APK
 
-# تشغيل يدوي فقط بضغطة زر (لحفظ الحصة المجانية تماماً)
 on:
   workflow_dispatch:
 
@@ -12,7 +11,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # تسريع البناء وحفظ الملفات المترجمة سحابياً (ccache)
       - name: Setup ccache for fast compilation
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -27,16 +25,14 @@ jobs:
       - name: Setup Android SDK & NDK
         uses: android-actions/setup-android@v3
 
-      - name: Compile Shaders to SPIR-V C-Headers
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+      - name: Compile Shaders to SPIR-V C-Headers (Khronos Toolchain)
         run: |
-          GLSLC=${ANDROID_NDK_HOME}/shader-tools/linux-x86_64/glslc
+          sudo apt-get update && sudo apt-get install -y glslang-tools
           mkdir -p src/shaders
-          $GLSLC src/shaders/cube.vert -mfmt=c -o src/shaders/cube_vert.h
-          $GLSLC src/shaders/cube.frag -mfmt=c -o src/shaders/cube_frag.h
-          $GLSLC src/shaders/line.vert -mfmt=c -o src/shaders/line_vert.h
-          $GLSLC src/shaders/line.frag -mfmt=c -o src/shaders/line_frag.h
+          glslangValidator -V -o src/shaders/cube_vert.h --vn cube_vert_data src/shaders/cube.vert
+          glslangValidator -V -o src/shaders/cube_frag.h --vn cube_frag_data src/shaders/cube.frag
+          glslangValidator -V -o src/shaders/line_vert.h --vn line_vert_data src/shaders/line.vert
+          glslangValidator -V -o src/shaders/line_frag.h --vn line_frag_data src/shaders/line.frag
 
       - name: Build C++ Vulkan Engine with CMake
         env:
