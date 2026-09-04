@@ -1,0 +1,58 @@
+name: Build C++ Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK & NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK and Build Tools
+        run: |
+          sdkmanager "ndk;26.1.10909125" "build-tools;34.0.0" "platforms;android-34"
+
+      - name: Build C++ Engine with CMake
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+        run: |
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+
+      - name: Package & Sign APK
+        run: |
+          # تجهيز مجلد تجميع حزمة الأندرويد
+          mkdir -p apk_build/lib/arm64-v8a
+          cp build/librender_engine.so apk_build/lib/arm64-v8a/
+          
+          # توليد شهادة توقيع رقمي
+          keytool -genkeypair -v -keystore release.keystore -alias release -keyalg RSA -keysize 2048 -validity 10000 -storepass password123 -keypass password123 -dname "CN=Render, OU=Dev, O=Dev, L=City, S=State, C=US"
+          
+          # تجميع ملف الـ APK
+          ${{ env.ANDROID_HOME }}/build-tools/34.0.0/aapt package -f -M AndroidManifest.xml -I ${{ env.ANDROID_HOME }}/platforms/android-34/android.jar -F build/unaligned.apk apk_build
+          ${{ env.ANDROID_HOME }}/build-tools/34.0.0/zipalign -v -p 4 build/unaligned.apk build/RenderApp.apk
+          ${{ env.ANDROID_HOME }}/build-tools/34.0.0/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out build/Render-Official.apk build/RenderApp.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Render-Engine-Alpha
+          path: build/Render-Official.apk
