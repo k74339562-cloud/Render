@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # فحص وتحديث أدوات وإجراءات سيرفرات GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # تجميع كل التحديثات في جروب واحد تلقائياً (نصيحة ماهر)
+    groups:
+      actions-dependencies:
+        patterns:
+          - "*"
