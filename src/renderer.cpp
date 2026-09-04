@@ -2,8 +2,8 @@
 #include <android/log.h>
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "RenderEngine", __VA_ARGS__))
+#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "RenderEngine", __VA_ARGS__))
 
-// شيدر بلندر الأصلي (Studio Clay + Rim Light)
 static const char* VS_CUBE = R"(#version 300 es
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNorm;
@@ -73,6 +73,11 @@ bool Renderer::initEGL(ANativeWindow* window) {
     EGLint numConfigs;
     eglChooseConfig(display, attribs, &config, 1, &numConfigs);
 
+    // خطوة حرجة لأندرويد 13 لمنع الانهيار: محاذاة بكسلات النافذة مع الكرت
+    EGLint format;
+    eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID, &format);
+    ANativeWindow_setBuffersGeometry(window, 0, 0, format);
+
     EGLint ctxAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
     context = eglCreateContext(display, config, EGL_NO_CONTEXT, ctxAttribs);
     surface = eglCreateWindowSurface(display, config, window, nullptr);
@@ -122,7 +127,6 @@ void Renderer::renderFrame() {
     eglQuerySurface(display, surface, EGL_HEIGHT, &height);
     glViewport(0, 0, width, height);
 
-    // لون خلفية بلندر الرمادية الأصلية
     glClearColor(0.18f, 0.19f, 0.22f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
@@ -145,7 +149,7 @@ void Renderer::renderFrame() {
     glUniform3f(glGetUniformLocation(cubeShader, "uCam"), camPos.x, camPos.y, camPos.z);
     mesh.renderCube();
 
-    // 3. رسم الجزمو ثلاثي الأبعاد فوق كل شيء
+    // 3. رسم الجزمو ثلاثي الأبعاد
     glUseProgram(lineShader);
     glUniformMatrix4fv(glGetUniformLocation(lineShader, "uVP"), 1, GL_FALSE, vp.m);
     gizmo.render(vp);
