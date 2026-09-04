@@ -1,12 +1,25 @@
 #include "vulkan_renderer.h"
 #include <vulkan/vulkan_android.h>
 #include <android/log.h>
-#include "shaders/cube_vert.h"
-#include "shaders/cube_frag.h"
-#include "shaders/line_vert.h"
-#include "shaders/line_frag.h"
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "VulkanEngine", __VA_ARGS__))
+
+// قراءة بيانات SPIR-V المترجمة بدقة
+static const uint32_t cube_vert_data[] =
+#include "shaders/cube_vert.h"
+;
+
+static const uint32_t cube_frag_data[] =
+#include "shaders/cube_frag.h"
+;
+
+static const uint32_t line_vert_data[] =
+#include "shaders/line_vert.h"
+;
+
+static const uint32_t line_frag_data[] =
+#include "shaders/line_frag.h"
+;
 
 static VkShaderModule createShaderModule(VkDevice device, const uint32_t* code, size_t sizeBytes) {
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
