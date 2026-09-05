@@ -100,13 +100,125 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
     mesh.position = mesh.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
 }
 
-void VulkanRenderer::switchSelectionMode() {
-    int nextMode = ((int)mesh.selectMode + 1) % 4;
-    mesh.selectMode = (SelectionMode)nextMode;
-    mesh.deselectAll();
-    mesh.isObjectSelected = (mesh.selectMode == SelectionMode::OBJECT);
-    isGizmoVisible = mesh.isObjectSelected;
-    mesh.rebuildBuffers(engine);
+// دالة فحص لمس أزرار الواجهة العلوية (Object Mode / Vert / Edge / Face)
+bool VulkanRenderer::handleUITouch(float touchX, float touchY, float screenW, float screenH) {
+    if (touchY > 80.0f) return false; // الأزرار تقع في الشريط العلوي (أول 80 بكسل)
+
+    // زر التبديل الرئيسي بين وضع الكائن ووضع التعديل
+    if (touchX >= 20.0f && touchX <= 220.0f) {
+        if (mesh.selectMode == SelectionMode::OBJECT) {
+            mesh.selectMode = SelectionMode::VERTEX;
+            mesh.isObjectSelected = false;
+            mesh.selectedVertexIdx = 0; // تحديد أول نقطة افتراضياً
+            isGizmoVisible = true;
+        } else {
+            mesh.selectMode = SelectionMode::OBJECT;
+            mesh.isObjectSelected = true;
+            isGizmoVisible = true;
+        }
+        mesh.rebuildBuffers(engine);
+        updateUIBuffers();
+        return true;
+    }
+
+    // أزرار الأنماط الفرعية بنمط التعديل
+    if (mesh.selectMode != SelectionMode::OBJECT) {
+        // زر النقاط
+        if (touchX >= 240.0f && touchX <= 330.0f) {
+            mesh.selectMode = SelectionMode::VERTEX;
+            mesh.selectedVertexIdx = 0;
+            isGizmoVisible = true;
+            mesh.rebuildBuffers(engine);
+            updateUIBuffers();
+            return true;
+        }
+        // زر الحواف
+        if (touchX >= 340.0f && touchX <= 430.0f) {
+            mesh.selectMode = SelectionMode::EDGE;
+            mesh.selectedEdgeIdx = 0;
+            isGizmoVisible = true;
+            mesh.rebuildBuffers(engine);
+            updateUIBuffers();
+            return true;
+        }
+        // زر الأوجه
+        if (touchX >= 440.0f && touchX <= 530.0f) {
+            mesh.selectMode = SelectionMode::FACE;
+            mesh.selectedFaceIdx = 1; // تحديد الوجه العلوي افتراضياً
+            isGizmoVisible = true;
+            mesh.rebuildBuffers(engine);
+            updateUIBuffers();
+            return true;
+        }
+    }
+    return false;
+}
+
+// بناء وتحديث رسم أزرار الواجهة كأشكال ثنائية الأبعاد مباشرة
+void VulkanRenderer::updateUIBuffers() {
+    float screenW = (float)engine.swapchainExtent.width;
+    float screenH = (float)engine.swapchainExtent.height;
+    if (screenW <= 0 || screenH <= 0) return;
+
+    std::vector<VertexLine> uiLines;
+
+    auto addBox2D = [&](float px0, float py0, float px1, float py1, float r, float g, float b, float a) {
+        // تحويل بكسل الشاشة إلى فضاء NDC
+        float x0 = (2.0f * px0) / screenW - 1.0f;
+        float y0 = 1.0f - (2.0f * py0) / screenH;
+        float x1 = (2.0f * px1) / screenW - 1.0f;
+        float y1 = 1.0f - (2.0f * py1) / screenH;
+
+        uiLines.push_back({x0, y0, 0.0f, r, g, b, a}); uiLines.push_back({x1, y0, 0.0f, r, g, b, a});
+        uiLines.push_back({x1, y0, 0.0f, r, g, b, a}); uiLines.push_back({x1, y1, 0.0f, r, g, b, a});
+        uiLines.push_back({x1, y1, 0.0f, r, g, b, a}); uiLines.push_back({x0, y1, 0.0f, r, g, b, a});
+        uiLines.push_back({x0, y1, 0.0f, r, g, b, a}); uiLines.push_back({x0, y0, 0.0f, r, g, b, a});
+    };
+
+    // 1. زر التبديل الرئيسي
+    bool isEdit = (mesh.selectMode != SelectionMode::OBJECT);
+    if (isEdit) {
+        addBox2D(20, 20, 220, 68, 0.28f, 0.45f, 0.70f, 1.0f); // أزرق بلندر النشط
+    } else {
+        addBox2D(20, 20, 220, 68, 0.85f, 0.45f, 0.15f, 1.0f); // برتقالي بلندر للكائن
+    }
+
+    // 2. أزرار الأنماط الفرعية
+    if (isEdit) {
+        // زر النقاط
+        float vr = (mesh.selectMode == SelectionMode::VERTEX) ? 1.0f : 0.4f;
+        float vg = (mesh.selectMode == SelectionMode::VERTEX) ? 0.7f : 0.4f;
+        addBox2D(240, 20, 330, 68, vr, vg, 0.1f, 1.0f);
+        // أيقونة النقطة
+        addBox2D(280, 40, 290, 48, 1, 1, 1, 1);
+
+        // زر الحواف
+        float er = (mesh.selectMode == SelectionMode::EDGE) ? 1.0f : 0.4f;
+        float eg = (mesh.selectMode == SelectionMode::EDGE) ? 0.7f : 0.4f;
+        addBox2D(340, 20, 430, 68, er, eg, 0.1f, 1.0f);
+        // أيقونة الخط
+        addBox2D(370, 52, 400, 36, 1, 1, 1, 1);
+
+        // زر الأوجه
+        float fr = (mesh.selectMode == SelectionMode::FACE) ? 1.0f : 0.4f;
+        float fg = (mesh.selectMode == SelectionMode::FACE) ? 0.7f : 0.4f;
+        addBox2D(440, 20, 530, 68, fr, fg, 0.1f, 1.0f);
+        // أيقونة المربع
+        addBox2D(475, 34, 495, 54, 1, 1, 1, 1);
+    }
+
+    if (uiVbo != VK_NULL_HANDLE) {
+        engine.destroyBuffer(uiVbo, uiVboMemory);
+        uiVbo = VK_NULL_HANDLE;
+    }
+
+    uiVertexCount = (uint32_t)uiLines.size();
+    if (uiVertexCount > 0) {
+        engine.createBuffer(uiLines.size() * sizeof(VertexLine), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
+                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uiVbo, uiVboMemory);
+        void* uData; vkMapMemory(engine.device, uiVboMemory, 0, uiLines.size() * sizeof(VertexLine), 0, &uData);
+        memcpy(uData, uiLines.data(), uiLines.size() * sizeof(VertexLine)); vkUnmapMemory(engine.device, uiVboMemory);
+    }
 }
 
 void VulkanRenderer::handleTapSelection(float touchX, float touchY, float screenW, float screenH) {
@@ -158,6 +270,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 
     mesh.initDefaultCube(engine);
 
+    // شبكة الأرضية
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -189,6 +302,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(engine.device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(engine.device, gridVboMemory);
 
+    // تهيئة الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     engine.createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
@@ -196,10 +310,12 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gizmoData; vkMapMemory(engine.device, gizmoVboMemory, 0, gizmo.vertices.size() * sizeof(GizmoVertex), 0, &gizmoData);
     memcpy(gizmoData, gizmo.vertices.data(), gizmo.vertices.size() * sizeof(GizmoVertex)); vkUnmapMemory(engine.device, gizmoVboMemory);
 
+    updateUIBuffers();
     return true;
 }
 
 void VulkanRenderer::cleanup() {
+    if (uiVbo) engine.destroyBuffer(uiVbo, uiVboMemory);
     mesh.cleanup(engine);
     engine.destroyBuffer(gizmoVbo, gizmoVboMemory);
     engine.destroyBuffer(gridVbo, gridVboMemory);
@@ -216,12 +332,22 @@ void VulkanRenderer::renderFrame() {
 
     if (!engine.beginFrame(v, p, eye)) return;
 
+    // 1. رسم شبكة الأرضية
     engine.drawLines(gridVbo, gridVertexCount, Mat4::identity());
+
+    // 2. رسم مجسم بلندر وعناصره
     mesh.draw(engine);
 
+    // 3. رسم الجزمو الديناميكي إذا كان هناك عنصر محدد
     if (isGizmoVisible) {
         Mat4 gizmoTransform = mesh.getActiveGizmoOrientation();
         engine.drawGizmo(gizmoVbo, gizmoVertexCount, gizmoTransform);
+    }
+
+    // 4. رسم أزرار واجهة بلندر في طبقة 2D علوية مباشرة
+    if (uiVbo != VK_NULL_HANDLE && uiVertexCount > 0) {
+        // مصفوفة هوية مباشرة في فضاء الشاشة
+        engine.drawOverlayLines(uiVbo, uiVertexCount, Mat4::identity());
     }
 
     engine.endFrame();
