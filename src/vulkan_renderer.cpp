@@ -4,6 +4,7 @@
 #include <android/native_window.h>
 #include <vector>
 #include <cstring>
+#include <cmath>
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "VulkanRenderer", __VA_ARGS__))
 
@@ -57,7 +58,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     vkEnumeratePhysicalDevices(instance, &devCount, devs.data());
     physicalDevice = devs[0];
 
-    // استعلام Queue Family بدقة
     uint32_t qFamCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &qFamCount, nullptr);
     std::vector<VkQueueFamilyProperties> qProps(qFamCount);
@@ -83,7 +83,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     if (vkCreateDevice(physicalDevice, &dci, nullptr, &device) != VK_SUCCESS) return false;
     vkGetDeviceQueue(device, graphicsQueueFamily, 0, &graphicsQueue);
 
-    // اختيار صيغة الألوان وحل مشكلة انعكاس الأحمر والأزرق نهائياً
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
@@ -97,8 +96,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
         }
     }
     swapchainFormat = chosenFormat.format;
-
-    // توحيد صيغة نافذة أندرويد لتطابق Vulkan 100%
     ANativeWindow_setBuffersGeometry(window, 0, 0, WINDOW_FORMAT_RGBA_8888);
 
     swapchainExtent = { (uint32_t)ANativeWindow_getWidth(window), (uint32_t)ANativeWindow_getHeight(window) };
@@ -129,7 +126,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 
     pipeline.init(device, physicalDevice, swapchainFormat, swapchainExtent, swapchainImageViews, uboBuffer);
 
-    // 1. هندسة المكعب بنظام Z-Up
+    // 1. هندسة المكعب
     VertexCube cubeVertices[] = {
         {-1,-1, 1,  0,0,1}, { 1,-1, 1,  0,0,1}, { 1, 1, 1,  0,0,1}, {-1, 1, 1,  0,0,1},
         { 1,-1,-1,  0,0,-1},{-1,-1,-1,  0,0,-1},{-1, 1,-1,  0,0,-1},{ 1, 1,-1,  0,0,-1},
@@ -151,39 +148,52 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* iData; vkMapMemory(device, cubeIboMemory, 0, sizeof(cubeIndices), 0, &iData);
     memcpy(iData, cubeIndices, sizeof(cubeIndices)); vkUnmapMemory(device, cubeIboMemory);
 
-    // 2. حواف مكعب بلندر الـ 12 الداكنة (#1A1A1A)
+    // 2. خطوط حواف تحديد بلندر البرتقالية المتوهجة (#E86C19) للمكعب النشط
+    const float er = 0.91f, eg = 0.42f, eb = 0.10f;
     VertexLine cubeEdges[] = {
-        {-1,-1,-1, 0.10f,0.10f,0.10f,1}, { 1,-1,-1, 0.10f,0.10f,0.10f,1},
-        { 1,-1,-1, 0.10f,0.10f,0.10f,1}, { 1, 1,-1, 0.10f,0.10f,0.10f,1},
-        { 1, 1,-1, 0.10f,0.10f,0.10f,1}, {-1, 1,-1, 0.10f,0.10f,0.10f,1},
-        {-1, 1,-1, 0.10f,0.10f,0.10f,1}, {-1,-1,-1, 0.10f,0.10f,0.10f,1},
-        {-1,-1, 1, 0.10f,0.10f,0.10f,1}, { 1,-1, 1, 0.10f,0.10f,0.10f,1},
-        { 1,-1, 1, 0.10f,0.10f,0.10f,1}, { 1, 1, 1, 0.10f,0.10f,0.10f,1},
-        { 1, 1, 1, 0.10f,0.10f,0.10f,1}, {-1, 1, 1, 0.10f,0.10f,0.10f,1},
-        {-1, 1, 1, 0.10f,0.10f,0.10f,1}, {-1,-1, 1, 0.10f,0.10f,0.10f,1},
-        {-1,-1,-1, 0.10f,0.10f,0.10f,1}, {-1,-1, 1, 0.10f,0.10f,0.10f,1},
-        { 1,-1,-1, 0.10f,0.10f,0.10f,1}, { 1,-1, 1, 0.10f,0.10f,0.10f,1},
-        { 1, 1,-1, 0.10f,0.10f,0.10f,1}, { 1, 1, 1, 0.10f,0.10f,0.10f,1},
-        {-1, 1,-1, 0.10f,0.10f,0.10f,1}, {-1, 1, 1, 0.10f,0.10f,0.10f,1}
+        {-1,-1,-1, er,eg,eb,1.0f}, { 1,-1,-1, er,eg,eb,1.0f},
+        { 1,-1,-1, er,eg,eb,1.0f}, { 1, 1,-1, er,eg,eb,1.0f},
+        { 1, 1,-1, er,eg,eb,1.0f}, {-1, 1,-1, er,eg,eb,1.0f},
+        {-1, 1,-1, er,eg,eb,1.0f}, {-1,-1,-1, er,eg,eb,1.0f},
+        {-1,-1, 1, er,eg,eb,1.0f}, { 1,-1, 1, er,eg,eb,1.0f},
+        { 1,-1, 1, er,eg,eb,1.0f}, { 1, 1, 1, er,eg,eb,1.0f},
+        { 1, 1, 1, er,eg,eb,1.0f}, {-1, 1, 1, er,eg,eb,1.0f},
+        {-1, 1, 1, er,eg,eb,1.0f}, {-1,-1, 1, er,eg,eb,1.0f},
+        {-1,-1,-1, er,eg,eb,1.0f}, {-1,-1, 1, er,eg,eb,1.0f},
+        { 1,-1,-1, er,eg,eb,1.0f}, { 1,-1, 1, er,eg,eb,1.0f},
+        { 1, 1,-1, er,eg,eb,1.0f}, { 1, 1, 1, er,eg,eb,1.0f},
+        {-1, 1,-1, er,eg,eb,1.0f}, {-1, 1, 1, er,eg,eb,1.0f}
     };
     createBuffer(sizeof(cubeEdges), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cubeEdgesVbo, cubeEdgesVboMemory);
     void* edgeData; vkMapMemory(device, cubeEdgesVboMemory, 0, sizeof(cubeEdges), 0, &edgeData);
     memcpy(edgeData, cubeEdges, sizeof(cubeEdges)); vkUnmapMemory(device, cubeEdgesVboMemory);
 
-    // 3. شبكة أرضية بلندر الرسمية على مسطح XY عند قاعدة المكعب Z = -1.0
+    // 3. شبكة أرضية بلندر الحقيقية: تتضمن المحاور الرئيسية وخطوط التقسيم المتلاشية نحو الأفق
     std::vector<VertexLine> gridLines;
-    int gridSize = 16;
-    for (int i = -gridSize; i <= gridSize; ++i) {
-        float fi = (float)i, fs = (float)gridSize;
-        float r = 0.24f, g = 0.24f, b = 0.24f;
-        if (i == 0) { r = 0.92f; g = 0.23f; b = 0.32f; } // خط محور X الأحمر
-        gridLines.push_back({-fs, fi, -1.0f, r, g, b, 1.0f});
-        gridLines.push_back({ fs, fi, -1.0f, r, g, b, 1.0f});
+    int gridSize = 20;
+    float maxDist = (float)gridSize;
 
-        r = 0.24f; g = 0.24f; b = 0.24f;
-        if (i == 0) { r = 0.51f; g = 0.78f; b = 0.14f; } // خط محور Y الأخضر
-        gridLines.push_back({fi, -fs, -1.0f, r, g, b, 1.0f});
-        gridLines.push_back({fi,  fs, -1.0f, r, g, b, 1.0f});
+    for (int i = -gridSize; i <= gridSize; ++i) {
+        float fi = (float)i;
+        float d = std::abs(fi) / maxDist;
+        float alpha = std::pow(1.0f - d, 1.8f) * 0.40f; // تدريج أسي ناعم كبلندر
+
+        // خطوط المحاور الصريحة
+        if (i == 0) {
+            gridLines.push_back({-maxDist, 0.0f, -1.0f, 0.92f, 0.23f, 0.32f, 0.95f});
+            gridLines.push_back({ maxDist, 0.0f, -1.0f, 0.92f, 0.23f, 0.32f, 0.95f});
+            gridLines.push_back({0.0f, -maxDist, -1.0f, 0.51f, 0.78f, 0.14f, 0.95f});
+            gridLines.push_back({0.0f,  maxDist, -1.0f, 0.51f, 0.78f, 0.14f, 0.95f});
+            continue;
+        }
+
+        // خطوط الشبكة الرمادية المنسجمة
+        float gc = 0.29f;
+        gridLines.push_back({-maxDist, fi, -1.0f, gc, gc, gc, alpha});
+        gridLines.push_back({ maxDist, fi, -1.0f, gc, gc, gc, alpha});
+
+        gridLines.push_back({fi, -maxDist, -1.0f, gc, gc, gc, alpha});
+        gridLines.push_back({fi,  maxDist, -1.0f, gc, gc, gc, alpha});
     }
     gridVertexCount = (uint32_t)gridLines.size();
 
@@ -191,7 +201,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(device, gridVboMemory);
 
-    // 4. تهيئة جزمو بلندر Z-Up
+    // 4. تهيئة جزمو بلندر الكامل
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gizmoVbo, gizmoVboMemory);
@@ -215,7 +225,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     vkCreateFence(device, &fci, nullptr, &inFlightFence);
 
-    LOGI("Blender AAA Renderer Engine Started Successfully!");
+    LOGI("Blender Pure Replica Engine Booted Successfully!");
     return true;
 }
 
@@ -281,9 +291,9 @@ void VulkanRenderer::renderFrame() {
     VkCommandBufferBeginInfo cbbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     vkBeginCommandBuffer(cmd, &cbbi);
 
-    // خلفية استوديو بلندر الرمادية الأصلية (#353535)
+    // خلفية استوديو بلندر الرسمية (#343434)
     VkClearValue clearValues[2];
-    clearValues[0].color = {{0.208f, 0.208f, 0.208f, 1.0f}};
+    clearValues[0].color = {{0.204f, 0.204f, 0.204f, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -296,25 +306,25 @@ void VulkanRenderer::renderFrame() {
 
     VkDeviceSize offsets[] = {0};
 
-    // 1. شبكة أرضية بلندر
+    // 1. رسم شبكة أرضية بلندر الشفافة
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gridVbo, offsets);
     vkCmdDraw(cmd, gridVertexCount, 1, 0, 0);
 
-    // 2. المكعب المصمت بشيدر بلندر الطيني
+    // 2. رسم المكعب المصمت بشيدر بلندر الطيني وخاصية Cavity
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.cubePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &cubeVbo, offsets);
     vkCmdBindIndexBuffer(cmd, cubeIbo, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
 
-    // 3. حواف مكعب بلندر الـ 12 الداكنة
+    // 3. رسم حواف تحديد بلندر البرتقالية
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindVertexBuffers(cmd, 0, 1, &cubeEdgesVbo, offsets);
     vkCmdDraw(cmd, 24, 1, 0, 0);
 
-    // 4. جزمو المحاور الثلاثية لبلندر
+    // 4. رسم جزمو بلندر الكامل بمربعات المسطحات
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.gizmoPipeline);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVbo, offsets);
     vkCmdDraw(cmd, gizmoVertexCount, 1, 0, 0);
