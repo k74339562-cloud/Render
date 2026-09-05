@@ -11,7 +11,7 @@ void Camera::onOrbit(float dx, float dy) {
 void Camera::onZoom(float ratio) {
     if (ratio <= 0.001f) return;
     // تقريب آمن يمنع الهروب إلى الفراغ الأسود
-    dist = std::clamp(dist / ratio, 1.8f, 45.0f);
+    dist = std::clamp(dist / ratio, 1.0f, 50.0f);
 }
 
 void Camera::onPan(float dx, float dy) {
