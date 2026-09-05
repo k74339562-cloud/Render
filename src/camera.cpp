@@ -3,15 +3,14 @@
 #include <algorithm>
 
 void Camera::onOrbit(float dx, float dy) {
-    // تم عكس اتجاه اليمين واليسار ليطابق حركة إصبعك تماماً
-    // وتم الإبقاء على الأعلى والأسفل كما هو (+ dy)
+    // دوران حر مضبوط 100% يتبع يدك
     yaw += dx * 0.005f;
     pitch = std::clamp(pitch + dy * 0.005f, -1.52f, 1.52f);
 }
 
 void Camera::onZoom(float ratio) {
     if (ratio <= 0.001f) return;
-    // زوم محمي يمنع الهروب إلى الفراغ الأسود
+    // تقريب آمن يمنع الهروب إلى الفراغ الأسود
     dist = std::clamp(dist / ratio, 1.8f, 45.0f);
 }
 
@@ -20,9 +19,9 @@ void Camera::onPan(float dx, float dy) {
     Vec3 camRight = {-cosY, sinY, 0.0f};
     Vec3 camUp = {-sinY * std::sin(pitch), -cosY * std::sin(pitch), std::cos(pitch)};
 
-    // تحريك متوازن مع الشاشة
+    // تم تصحيح الإشارة الرأسية: الرفع لأعلى يرفع المشهد والنزول لأسفل ينزل المشهد
     float factor = dist * 0.001f;
-    Vec3 deltaMove = (camRight * (dx * factor)) + (camUp * (-dy * factor));
+    Vec3 deltaMove = (camRight * (dx * factor)) + (camUp * (dy * factor));
     target = target + deltaMove;
 }
 
