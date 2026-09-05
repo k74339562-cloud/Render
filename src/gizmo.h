@@ -9,7 +9,6 @@ struct GizmoVertex {
 
 class Gizmo {
 public:
-    std::vector<GizmoVertex> vertices; // مصفوفة موحدة للأعمدة والمخاريط
-
+    std::vector<GizmoVertex> vertices;
     void init();
 };
