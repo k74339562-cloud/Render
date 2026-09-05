@@ -19,7 +19,7 @@ public:
     RenderEngine engine;
     Camera camera;
     Gizmo gizmo;
-    MeshData mesh; // مجسم بلندر الحر القابل للتعديل والتحديد
+    MeshData mesh;
 
     VkBuffer gridVbo = VK_NULL_HANDLE;
     VkDeviceMemory gridVboMemory = VK_NULL_HANDLE;
@@ -29,8 +29,13 @@ public:
     VkDeviceMemory gizmoVboMemory = VK_NULL_HANDLE;
     uint32_t gizmoVertexCount = 0;
 
+    // بافر رسم أزرار واجهة بلندر على الشاشة (UI Overlay)
+    VkBuffer uiVbo = VK_NULL_HANDLE;
+    VkDeviceMemory uiVboMemory = VK_NULL_HANDLE;
+    uint32_t uiVertexCount = 0;
+
     GizmoAxis activeAxis = AXIS_NONE;
-    bool isGizmoVisible = true; // إخفاء الجزمو عند النقر في الفراغ
+    bool isGizmoVisible = true;
 
     bool init(ANativeWindow* window);
     void cleanup();
@@ -39,6 +44,9 @@ public:
     GizmoAxis testGizmoHit(float touchX, float touchY, float screenW, float screenH);
     void dragGizmo(float dx, float dy, float screenW, float screenH);
 
-    void switchSelectionMode(); // التبديل بين أوضاع بلندر (كائن -> نقاط -> حواف -> أوجه)
+    // نظام فحص ورسم أزرار واجهة بلندر
+    bool handleUITouch(float touchX, float touchY, float screenW, float screenH);
+    void updateUIBuffers();
+
     void handleTapSelection(float touchX, float touchY, float screenW, float screenH);
 };
