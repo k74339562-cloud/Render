@@ -7,8 +7,8 @@ struct Vec2 {
 
 class Camera {
 public:
-    Vec3 target = {0.0f, 0.0f, 0.0f}; // مركز الدوران والارتكاز
-    float dist = 7.0f;                 // المسافة عن الهدف
+    Vec3 target = {0.0f, 0.0f, 0.0f}; // مركز الارتكاز المباشر
+    float dist = 7.0f;                 // مسافة الكاميرا عن المركز
     float yaw = -0.785f;               // زاوية بلندر الكلاسيكية
     float pitch = 0.523f;              // زاوية الارتفاع
 
