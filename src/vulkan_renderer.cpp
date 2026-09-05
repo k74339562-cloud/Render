@@ -8,9 +8,7 @@
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "VulkanRenderer", __VA_ARGS__))
 
-struct VertexCube { float x, y, z; float nx, ny, nz; };
 struct VertexLine { float x, y, z; float r, g, b, a; };
-
 static void* g_uboMapped = nullptr;
 
 uint32_t VulkanRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -40,70 +38,72 @@ void VulkanRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, V
     vkBindBufferMemory(device, buffer, bufferMemory, 0);
 }
 
-// خوارزمية قياس أقرب مسافة بين شعاع اللمس وأعمدة الجزمو (Ray-to-Segment Distance)
-static float distRayToSegment(const Ray& ray, const Vec3& p0, const Vec3& p1, float& outDistOnSegment) {
-    Vec3 u = ray.dir;
-    Vec3 v = p1 - p0;
-    Vec3 w0 = ray.origin - p0;
+static float distToScreenSegment(float tx, float ty, const Vec2& p0, const Vec2& p1) {
+    float vx = p1.x - p0.x, vy = p1.y - p0.y;
+    float wx = tx - p0.x,   wy = ty - p0.y;
 
-    float a = u.dot(u);
-    float b = u.dot(v);
-    float c = v.dot(v);
-    float d = u.dot(w0);
-    float e = v.dot(w0);
+    float c1 = wx * vx + wy * vy;
+    if (c1 <= 0.0f) return std::sqrt(wx * wx + wy * wy);
 
-    float denom = a * c - b * b;
-    if (std::abs(denom) < 0.0001f) {
-        outDistOnSegment = 0.0f;
-        return (ray.origin - p0).length();
+    float c2 = vx * vx + vy * vy;
+    if (c2 <= c1) {
+        float dx = tx - p1.x, dy = ty - p1.y;
+        return std::sqrt(dx * dx + dy * dy);
     }
 
-    float sc = (b * e - c * d) / denom;
-    float tc = (a * e - b * d) / denom;
-
-    if (sc < 0.0f) sc = 0.0f; // أمام الكاميرا فقط
-    tc = std::clamp(tc, 0.0f, 1.0f); // داخل حدود السهم
-
-    outDistOnSegment = tc;
-    Vec3 closestRay = ray.origin + u * sc;
-    Vec3 closestSeg = p0 + v * tc;
-    return (closestRay - closestSeg).length();
+    float b = c1 / c2;
+    float px = p0.x + b * vx, py = p0.y + b * vy;
+    float dx = tx - px, dy = ty - py;
+    return std::sqrt(dx * dx + dy * dy);
 }
 
-GizmoAxis VulkanRenderer::testGizmoHit(const Ray& ray) {
-    float shaftLen = 1.9f;
-    float grabThreshold = 0.35f; // حساسية لمس مريحة للشاشات الصغيرة
+GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW, float screenH) {
+    float shaftLen = 1.8f;
+    Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
+    Vec2 pX = camera.projectToScreen(box.position + Vec3(shaftLen, 0, 0), screenW, screenH);
+    Vec2 pY = camera.projectToScreen(box.position + Vec3(0, shaftLen, 0), screenW, screenH);
+    Vec2 pZ = camera.projectToScreen(box.position + Vec3(0, 0, shaftLen), screenW, screenH);
 
-    float distOnSeg = 0.0f;
-    float distX = distRayToSegment(ray, cubePosition, cubePosition + Vec3(shaftLen, 0, 0), distOnSeg);
-    float distY = distRayToSegment(ray, cubePosition, cubePosition + Vec3(0, shaftLen, 0), distOnSeg);
-    float distZ = distRayToSegment(ray, cubePosition, cubePosition + Vec3(0, 0, shaftLen), distOnSeg);
+    float dX = distToScreenSegment(touchX, touchY, pCenter, pX);
+    float dY = distToScreenSegment(touchX, touchY, pCenter, pY);
+    float dZ = distToScreenSegment(touchX, touchY, pCenter, pZ);
 
+    float threshold = 48.0f;
     GizmoAxis hit = AXIS_NONE;
-    float minDist = grabThreshold;
+    float minDist = threshold;
 
-    if (distX < minDist) { minDist = distX; hit = AXIS_X; }
-    if (distY < minDist) { minDist = distY; hit = AXIS_Y; }
-    if (distZ < minDist) { minDist = distZ; hit = AXIS_Z; }
+    if (dZ < minDist) { minDist = dZ; hit = AXIS_Z; }
+    if (dY < minDist) { minDist = dY; hit = AXIS_Y; }
+    if (dX < minDist) { minDist = dX; hit = AXIS_X; }
 
     return hit;
 }
 
-void VulkanRenderer::dragGizmo(const Ray& rayPrev, const Ray& rayCurr) {
+void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH) {
     if (activeAxis == AXIS_NONE) return;
 
-    Vec3 axisDir = {0, 0, 0};
-    if (activeAxis == AXIS_X) axisDir = {1.0f, 0.0f, 0.0f};
-    if (activeAxis == AXIS_Y) axisDir = {0.0f, 1.0f, 0.0f};
-    if (activeAxis == AXIS_Z) axisDir = {0.0f, 0.0f, 1.0f};
+    Vec3 axisDir3D = {0, 0, 0};
+    if (activeAxis == AXIS_X) axisDir3D = {1.0f, 0.0f, 0.0f};
+    if (activeAxis == AXIS_Y) axisDir3D = {0.0f, 1.0f, 0.0f};
+    if (activeAxis == AXIS_Z) axisDir3D = {0.0f, 0.0f, 1.0f};
 
-    float shaftLen = 100.0f; // امتداد لا نهائي لمحور السحب أثناء الإمساك به
-    float tcPrev = 0.0f, tcCurr = 0.0f;
-    distRayToSegment(rayPrev, cubePosition, cubePosition + axisDir * shaftLen, tcPrev);
-    distRayToSegment(rayCurr, cubePosition, cubePosition + axisDir * shaftLen, tcCurr);
+    Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
+    Vec2 pTip    = camera.projectToScreen(box.position + axisDir3D, screenW, screenH);
 
-    float delta = (tcCurr - tcPrev) * shaftLen;
-    cubePosition = cubePosition + (axisDir * delta);
+    float screenDirX = pTip.x - pCenter.x;
+    float screenDirY = pTip.y - pCenter.y;
+    float len = std::sqrt(screenDirX * screenDirX + screenDirY * screenDirY);
+    if (len < 0.001f) return;
+
+    screenDirX /= len;
+    screenDirY /= len;
+
+    float dotMove = (dx * screenDirX) + (dy * screenDirY);
+    float camDist = (camera.pos - box.position).length();
+    float worldUnitsPerPixel = (camDist * 0.0016f);
+
+    // تحريك المكعب المستقل فقط دون لمس شبكة الأرضية
+    box.position = box.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
 }
 
 bool VulkanRenderer::init(ANativeWindow* window) {
@@ -192,49 +192,10 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 
     pipeline.init(device, physicalDevice, swapchainFormat, swapchainExtent, swapchainImageViews, uboBuffer);
 
-    // 1. هندسة المكعب
-    VertexCube cubeVertices[] = {
-        {-1,-1, 1,  0,0,1}, { 1,-1, 1,  0,0,1}, { 1, 1, 1,  0,0,1}, {-1, 1, 1,  0,0,1},
-        { 1,-1,-1,  0,0,-1},{-1,-1,-1,  0,0,-1},{-1, 1,-1,  0,0,-1},{ 1, 1,-1,  0,0,-1},
-        {-1, 1, 1,  0,1,0}, { 1, 1, 1,  0,1,0}, { 1, 1,-1,  0,1,0}, {-1, 1,-1,  0,1,0},
-        {-1,-1,-1,  0,-1,0},{ 1,-1,-1,  0,-1,0},{ 1,-1, 1,  0,-1,0},{-1,-1, 1,  0,-1,0},
-        { 1,-1, 1,  1,0,0}, { 1,-1,-1,  1,0,0}, { 1, 1,-1,  1,0,0}, { 1, 1, 1,  1,0,0},
-        {-1,-1,-1, -1,0,0}, {-1,-1, 1, -1,0,0}, {-1, 1, 1, -1,0,0}, {-1, 1,-1, -1,0,0}
-    };
-    uint16_t cubeIndices[] = {
-        0,1,2, 0,2,3, 4,5,6, 4,6,7, 8,9,10, 8,10,11,
-        12,13,14, 12,14,15, 16,17,18, 16,18,19, 20,21,22, 20,22,23
-    };
+    // تهيئة المكعب المستقل
+    box.init(device, physicalDevice);
 
-    createBuffer(sizeof(cubeVertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cubeVbo, cubeVboMemory);
-    void* vData; vkMapMemory(device, cubeVboMemory, 0, sizeof(cubeVertices), 0, &vData);
-    memcpy(vData, cubeVertices, sizeof(cubeVertices)); vkUnmapMemory(device, cubeVboMemory);
-
-    createBuffer(sizeof(cubeIndices), VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cubeIbo, cubeIboMemory);
-    void* iData; vkMapMemory(device, cubeIboMemory, 0, sizeof(cubeIndices), 0, &iData);
-    memcpy(iData, cubeIndices, sizeof(cubeIndices)); vkUnmapMemory(device, cubeIboMemory);
-
-    // 2. خطوط حواف تحديد بلندر البرتقالية (#E86C19)
-    const float er = 0.91f, eg = 0.42f, eb = 0.10f;
-    VertexLine cubeEdges[] = {
-        {-1,-1,-1, er,eg,eb,1.0f}, { 1,-1,-1, er,eg,eb,1.0f},
-        { 1,-1,-1, er,eg,eb,1.0f}, { 1, 1,-1, er,eg,eb,1.0f},
-        { 1, 1,-1, er,eg,eb,1.0f}, {-1, 1,-1, er,eg,eb,1.0f},
-        {-1, 1,-1, er,eg,eb,1.0f}, {-1,-1,-1, er,eg,eb,1.0f},
-        {-1,-1, 1, er,eg,eb,1.0f}, { 1,-1, 1, er,eg,eb,1.0f},
-        { 1,-1, 1, er,eg,eb,1.0f}, { 1, 1, 1, er,eg,eb,1.0f},
-        { 1, 1, 1, er,eg,eb,1.0f}, {-1, 1, 1, er,eg,eb,1.0f},
-        {-1, 1, 1, er,eg,eb,1.0f}, {-1,-1, 1, er,eg,eb,1.0f},
-        {-1,-1,-1, er,eg,eb,1.0f}, {-1,-1, 1, er,eg,eb,1.0f},
-        { 1,-1,-1, er,eg,eb,1.0f}, { 1,-1, 1, er,eg,eb,1.0f},
-        { 1, 1,-1, er,eg,eb,1.0f}, { 1, 1, 1, er,eg,eb,1.0f},
-        {-1, 1,-1, er,eg,eb,1.0f}, {-1, 1, 1, er,eg,eb,1.0f}
-    };
-    createBuffer(sizeof(cubeEdges), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cubeEdgesVbo, cubeEdgesVboMemory);
-    void* edgeData; vkMapMemory(device, cubeEdgesVboMemory, 0, sizeof(cubeEdges), 0, &edgeData);
-    memcpy(edgeData, cubeEdges, sizeof(cubeEdges)); vkUnmapMemory(device, cubeEdgesVboMemory);
-
-    // 3. شبكة أرضية بلندر
+    // تهيئة شبكة الأرضية
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -265,7 +226,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(device, gridVboMemory);
 
-    // 4. تهيئة جزمو بلندر
+    // تهيئة الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gizmoVbo, gizmoVboMemory);
@@ -289,7 +250,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     vkCreateFence(device, &fci, nullptr, &inFlightFence);
 
-    LOGI("Blender Pure Replica Engine Booted Successfully!");
+    LOGI("Modular Engine Started!");
     return true;
 }
 
@@ -304,13 +265,11 @@ void VulkanRenderer::cleanup() {
         vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
         vkDestroyCommandPool(device, commandPool, nullptr);
 
+        box.cleanup(device);
         pipeline.cleanup(device);
 
         vkDestroyBuffer(device, gizmoVbo, nullptr); vkFreeMemory(device, gizmoVboMemory, nullptr);
         vkDestroyBuffer(device, gridVbo, nullptr); vkFreeMemory(device, gridVboMemory, nullptr);
-        vkDestroyBuffer(device, cubeEdgesVbo, nullptr); vkFreeMemory(device, cubeEdgesVboMemory, nullptr);
-        vkDestroyBuffer(device, cubeIbo, nullptr); vkFreeMemory(device, cubeIboMemory, nullptr);
-        vkDestroyBuffer(device, cubeVbo, nullptr); vkFreeMemory(device, cubeVboMemory, nullptr);
         vkDestroyBuffer(device, uboBuffer, nullptr); vkFreeMemory(device, uboBufferMemory, nullptr);
 
         for (auto iv : swapchainImageViews) vkDestroyImageView(device, iv, nullptr);
@@ -341,6 +300,16 @@ void VulkanRenderer::renderFrame() {
 
     vkResetFences(device, 1, &inFlightFence);
 
+    // تحديث الكاميرا العامة في الـ UBO مرة واحدة فقط في الفريم
+    if (g_uboMapped) {
+        UniformBufferObject ubo{};
+        Mat4 v = camera.getViewMatrix();
+        Mat4 p = camera.getProjectionMatrix((float)swapchainExtent.width, (float)swapchainExtent.height);
+        ubo.viewProj = p * v;
+        ubo.camPos = camera.pos;
+        memcpy(g_uboMapped, &ubo, sizeof(ubo));
+    }
+
     VkCommandBuffer cmd = commandBuffers[imageIndex];
     vkResetCommandBuffer(cmd, 0);
 
@@ -361,46 +330,31 @@ void VulkanRenderer::renderFrame() {
 
     VkDeviceSize offsets[] = {0};
 
-    // 1. رسم شبكة الأرضية الثابتة عند نقطة الأصل
-    if (g_uboMapped) {
-        UniformBufferObject uboGrid{};
-        Mat4 v = camera.getViewMatrix();
-        Mat4 p = camera.getProjectionMatrix((float)swapchainExtent.width, (float)swapchainExtent.height);
-        uboGrid.viewProj = p * v;
-        uboGrid.model = Mat4::identity();
-        uboGrid.camPos = camera.getPosition();
-        memcpy(g_uboMapped, &uboGrid, sizeof(uboGrid));
-    }
+    // 1. رسم شبكة الأرضية الثابتة للأبد عند نقطة الأصل (Identity Push Constant)
+    Mat4 gridModel = Mat4::identity();
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
+    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &gridModel);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gridVbo, offsets);
     vkCmdDraw(cmd, gridVertexCount, 1, 0, 0);
 
-    // 2. تحديث موقع المكعب والجزمو في الفضاء معاً (Model Matrix Translation)
-    if (g_uboMapped) {
-        UniformBufferObject uboCube{};
-        Mat4 v = camera.getViewMatrix();
-        Mat4 p = camera.getProjectionMatrix((float)swapchainExtent.width, (float)swapchainExtent.height);
-        uboCube.viewProj = p * v;
-        uboCube.model = Mat4::translate(cubePosition);
-        uboCube.camPos = camera.getPosition();
-        memcpy(g_uboMapped, &uboCube, sizeof(uboCube));
-    }
+    // 2. رسم المكعب المستقل (Box) بمصفوفته الخاصة عبر Push Constants
+    Mat4 boxModel = box.getModelMatrix();
 
-    // رسم المكعب المصمت
+    // رسم أوجه المكعب
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.cubePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
-    vkCmdBindVertexBuffers(cmd, 0, 1, &cubeVbo, offsets);
-    vkCmdBindIndexBuffer(cmd, cubeIbo, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
+    box.renderFaces(cmd);
 
-    // رسم حواف تحديد بلندر البرتقالية المتحركة مع المكعب
+    // رسم حواف تحديد المكعب البرتقالية
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
-    vkCmdBindVertexBuffers(cmd, 0, 1, &cubeEdgesVbo, offsets);
-    vkCmdDraw(cmd, 24, 1, 0, 0);
+    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
+    box.renderEdges(cmd);
 
-    // رسم جزمو بلندر المتحرك مع المكعب
+    // 3. رسم الجزمو بمصفوفة المكعب ليتحرك معه كقطعة واحدة
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.gizmoPipeline);
+    vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVbo, offsets);
     vkCmdDraw(cmd, gizmoVertexCount, 1, 0, 0);
 
