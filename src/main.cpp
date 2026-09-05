@@ -26,6 +26,7 @@ static float calcDist(float x1, float y1, float x2, float y2) {
 static int32_t onInput(struct android_app* app, AInputEvent* event) {
     auto* s = (AppState*)app->userData;
 
+    // منع الخروج بزر الرجوع
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY) {
         int32_t keyCode = AKeyEvent_getKeyCode(event);
         if (keyCode == AKEYCODE_BACK) return 1;
@@ -36,8 +37,9 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
         int masked = action & AMOTION_EVENT_ACTION_MASK;
         size_t count = AMotionEvent_getPointerCount(event);
 
-        float screenW = (float)s->renderer.swapchainExtent.width;
-        float screenH = (float)s->renderer.swapchainExtent.height;
+        // تم التصحيح: استدعاء أبعاد الشاشة من مكتبة الرندر المنفصلة
+        float screenW = (float)s->renderer.engine.swapchainExtent.width;
+        float screenH = (float)s->renderer.engine.swapchainExtent.height;
 
         if (masked == AMOTION_EVENT_ACTION_UP || masked == AMOTION_EVENT_ACTION_CANCEL) {
             s->renderer.activeAxis = AXIS_NONE;
@@ -51,11 +53,11 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
             float y = AMotionEvent_getY(event, 0);
 
             if (masked == AMOTION_EVENT_ACTION_DOWN) {
-                // ميزة النقر المزدوج (Double Tap to Focus): تعيد الكاميرا للمكعب فوراً
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - s->lastTapTime).count();
                 s->lastTapTime = now;
 
+                // ميزة النقر المزدوج لإعادة التركيز (Double Tap to Focus)
                 if (elapsed < 300) {
                     s->renderer.camera.focusOn(s->renderer.box.position);
                     s->state = NAV_IDLE;
@@ -64,14 +66,13 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
 
                 s->lastX = x; s->lastY = y;
 
-                // فحص الجزمو بالبكسل: فصل تام بين سحب المكعب وتدوير الكاميرا
                 GizmoAxis hit = s->renderer.testGizmoHit(x, y, screenW, screenH);
                 if (hit != AXIS_NONE) {
                     s->renderer.activeAxis = hit;
-                    s->state = NAV_GIZMO_DRAG; // يتحرك المكعب فقط وتتجمد الكاميرا
+                    s->state = NAV_GIZMO_DRAG;
                 } else {
                     s->renderer.activeAxis = AXIS_NONE;
-                    s->state = NAV_ORBIT;      // تدور الكاميرا فقط ويتجمد المكعب
+                    s->state = NAV_ORBIT;
                 }
                 return 1;
             } 
@@ -89,7 +90,7 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 return 1;
             }
         } 
-        // 2. حركة بإصبعين (زوم سلس وتحريك المشهد)
+        // 2. حركة بإصبعين: تحريك المشهد (Pan) والتقريب (Zoom)
         else if (count >= 2) {
             s->renderer.activeAxis = AXIS_NONE;
             float x0 = AMotionEvent_getX(event, 0), y0 = AMotionEvent_getY(event, 0);
@@ -115,7 +116,6 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->lastMidX = midX; s->lastMidY = midY;
                 return 1;
             } else if (masked == AMOTION_EVENT_ACTION_POINTER_UP) {
-                // منع قفزة الشاشة عند رفع أحد الأصابع
                 int upIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
                 int remainingIndex = (upIndex == 0) ? 1 : 0;
                 s->lastX = AMotionEvent_getX(event, remainingIndex);
