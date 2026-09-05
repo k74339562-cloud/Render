@@ -22,7 +22,7 @@ public:
     VkQueue graphicsQueue = VK_NULL_HANDLE;
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    VkFormat swapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    VkFormat swapchainFormat = VK_FORMAT_R8G8B8A8_UNORM;
     VkExtent2D swapchainExtent = {0, 0};
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
