@@ -1,8 +1,25 @@
 #include "gizmo.h"
 #include <cmath>
 
+static void addBox(std::vector<GizmoVertex>& v, const Vec3& minP, const Vec3& maxP, float r, float g, float b) {
+    // رسم عمود المحور المجسم كمتوازي مستطيلات مصمت
+    Vec3 p[8] = {
+        {minP.x, minP.y, minP.z}, {maxP.x, minP.y, minP.z},
+        {maxP.x, maxP.y, minP.z}, {minP.x, maxP.y, minP.z},
+        {minP.x, minP.y, maxP.z}, {maxP.x, minP.y, maxP.z},
+        {maxP.x, maxP.y, maxP.z}, {minP.x, maxP.y, maxP.z}
+    };
+    int idx[] = {
+        0,1,2, 0,2,3,  4,6,5, 4,7,6,  0,4,5, 0,5,1,
+        1,5,6, 1,6,2,  2,6,7, 2,7,3,  3,7,4, 3,4,0
+    };
+    for (int i : idx) {
+        v.push_back({p[i].x, p[i].y, p[i].z, r, g, b, 1.0f});
+    }
+}
+
 static void addCone(std::vector<GizmoVertex>& v, const Vec3& base, const Vec3& dir, float r, float g, float b) {
-    float len = 0.45f, radius = 0.12f;
+    float len = 0.5f, radius = 0.13f;
     Vec3 tip = base + dir * len;
     Vec3 p1 = (std::abs(dir.y) < 0.9f) ? dir.cross(Vec3(0, 1, 0)).normalize() : dir.cross(Vec3(1, 0, 0)).normalize();
     Vec3 p2 = dir.cross(p1).normalize();
@@ -17,26 +34,27 @@ static void addCone(std::vector<GizmoVertex>& v, const Vec3& base, const Vec3& d
         v.push_back({tip.x, tip.y, tip.z, r, g, b, 1.0f});
         v.push_back({pt1.x, pt1.y, pt1.z, r, g, b, 1.0f});
         v.push_back({pt2.x, pt2.y, pt2.z, r, g, b, 1.0f});
+
+        v.push_back({base.x, base.y, base.z, r * 0.8f, g * 0.8f, b * 0.8f, 1.0f});
+        v.push_back({pt2.x, pt2.y, pt2.z, r * 0.8f, g * 0.8f, b * 0.8f, 1.0f});
+        v.push_back({pt1.x, pt1.y, pt1.z, r * 0.8f, g * 0.8f, b * 0.8f, 1.0f});
     }
 }
 
 void Gizmo::init() {
-    lines.clear();
-    cones.clear();
-    float shaft = 2.0f;
+    vertices.clear();
+    float shaftLen = 1.8f;
+    float w = 0.025f; // سُمك عمود المحور
 
-    // 1. محور X الأحمر (خط + سهم)
-    lines.push_back({0, 0, 0, 0.95f, 0.2f, 0.2f, 1.0f});
-    lines.push_back({shaft, 0, 0, 0.95f, 0.2f, 0.2f, 1.0f});
-    addCone(cones, Vec3(shaft, 0, 0), Vec3(1, 0, 0), 0.95f, 0.2f, 0.2f);
+    // 1. محور X الأحمر (عمود صلب يبدأ من الصفر + مخروط في نهايته)
+    addBox(vertices, Vec3(0, -w, -w), Vec3(shaftLen, w, w), 0.95f, 0.2f, 0.2f);
+    addCone(vertices, Vec3(shaftLen, 0, 0), Vec3(1, 0, 0), 0.95f, 0.2f, 0.2f);
 
-    // 2. محور Y الأخضر (خط + سهم للأعلى)
-    lines.push_back({0, 0, 0, 0.2f, 0.85f, 0.2f, 1.0f});
-    lines.push_back({0, shaft, 0, 0.2f, 0.85f, 0.2f, 1.0f});
-    addCone(cones, Vec3(0, shaft, 0), Vec3(0, 1, 0), 0.2f, 0.85f, 0.2f);
+    // 2. محور Y الأخضر (عمود صلب للأعلى + مخروط)
+    addBox(vertices, Vec3(-w, 0, -w), Vec3(w, shaftLen, w), 0.2f, 0.85f, 0.2f);
+    addCone(vertices, Vec3(0, shaftLen, 0), Vec3(0, 1, 0), 0.2f, 0.85f, 0.2f);
 
-    // 3. محور Z الأزرق (خط + سهم)
-    lines.push_back({0, 0, 0, 0.2f, 0.45f, 0.98f, 1.0f});
-    lines.push_back({0, 0, shaft, 0.2f, 0.45f, 0.98f, 1.0f});
-    addCone(cones, Vec3(0, 0, shaft), Vec3(0, 0, 1), 0.2f, 0.45f, 0.98f);
+    // 3. محور Z الأزرق (عمود صلب + مخروط)
+    addBox(vertices, Vec3(-w, -w, 0), Vec3(w, w, shaftLen), 0.2f, 0.45f, 0.98f);
+    addCone(vertices, Vec3(0, 0, shaftLen), Vec3(0, 0, 1), 0.2f, 0.45f, 0.98f);
 }
