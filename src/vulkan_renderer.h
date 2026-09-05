@@ -4,6 +4,7 @@
 #include <vector>
 #include "camera.h"
 #include "gizmo.h"
+#include "box.h"
 #include "vulkan_pipeline.h"
 
 enum GizmoAxis {
@@ -15,7 +16,6 @@ enum GizmoAxis {
 
 struct UniformBufferObject {
     Mat4 viewProj;
-    Mat4 model;
     Vec3 camPos;
     float padding = 0.0f;
 };
@@ -45,36 +45,28 @@ public:
     VkBuffer uboBuffer = VK_NULL_HANDLE;
     VkDeviceMemory uboBufferMemory = VK_NULL_HANDLE;
 
-    VkBuffer cubeVbo = VK_NULL_HANDLE;
-    VkDeviceMemory cubeVboMemory = VK_NULL_HANDLE;
-    VkBuffer cubeIbo = VK_NULL_HANDLE;
-    VkDeviceMemory cubeIboMemory = VK_NULL_HANDLE;
-
-    VkBuffer cubeEdgesVbo = VK_NULL_HANDLE;
-    VkDeviceMemory cubeEdgesVboMemory = VK_NULL_HANDLE;
-
+    // شبكة الأرضية
     VkBuffer gridVbo = VK_NULL_HANDLE;
     VkDeviceMemory gridVboMemory = VK_NULL_HANDLE;
     uint32_t gridVertexCount = 0;
 
+    // الجزمو
     VkBuffer gizmoVbo = VK_NULL_HANDLE;
     VkDeviceMemory gizmoVboMemory = VK_NULL_HANDLE;
     uint32_t gizmoVertexCount = 0;
 
     Camera camera;
     Gizmo gizmo;
+    Box box; // المكعب المستقل
 
-    // موقع المكعب في الفضاء وحالته التفاعلية
-    Vec3 cubePosition = {0.0f, 0.0f, 0.0f};
     GizmoAxis activeAxis = AXIS_NONE;
 
     bool init(ANativeWindow* window);
     void cleanup();
     void renderFrame();
 
-    // دوال فحص التقاطع والتحريك التفاعلي
-    GizmoAxis testGizmoHit(const Ray& ray);
-    void dragGizmo(const Ray& rayPrev, const Ray& rayCurr);
+    GizmoAxis testGizmoHit(float touchX, float touchY, float screenW, float screenH);
+    void dragGizmo(float dx, float dy, float screenW, float screenH);
 
 private:
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
