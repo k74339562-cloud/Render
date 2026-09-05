@@ -68,7 +68,7 @@ GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW
     float dY = distToScreenSegment(touchX, touchY, pCenter, pY);
     float dZ = distToScreenSegment(touchX, touchY, pCenter, pZ);
 
-    float threshold = 48.0f;
+    float threshold = 52.0f; // مساحة لمس مريحة للشاشات عالية الدقة
     GizmoAxis hit = AXIS_NONE;
     float minDist = threshold;
 
@@ -99,10 +99,10 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
     screenDirY /= len;
 
     float dotMove = (dx * screenDirX) + (dy * screenDirY);
-    float camDist = (camera.pos - box.position).length();
-    float worldUnitsPerPixel = (camDist * 0.0016f);
+    // تم التصحيح: استخدام camera.getPosition() بدلاً من camera.pos
+    float camDist = (camera.getPosition() - box.position).length();
+    float worldUnitsPerPixel = (camDist * 0.0015f);
 
-    // تحريك المكعب المستقل فقط دون لمس شبكة الأرضية
     box.position = box.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
 }
 
@@ -192,10 +192,8 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 
     pipeline.init(device, physicalDevice, swapchainFormat, swapchainExtent, swapchainImageViews, uboBuffer);
 
-    // تهيئة المكعب المستقل
     box.init(device, physicalDevice);
 
-    // تهيئة شبكة الأرضية
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -226,7 +224,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(device, gridVboMemory);
 
-    // تهيئة الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, gizmoVbo, gizmoVboMemory);
@@ -250,7 +247,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     vkCreateFence(device, &fci, nullptr, &inFlightFence);
 
-    LOGI("Modular Engine Started!");
+    LOGI("AAA Engine Ready!");
     return true;
 }
 
@@ -300,13 +297,13 @@ void VulkanRenderer::renderFrame() {
 
     vkResetFences(device, 1, &inFlightFence);
 
-    // تحديث الكاميرا العامة في الـ UBO مرة واحدة فقط في الفريم
+    // تم التصحيح: استدعاء getPosition() بنجاح بدون أخطاء تجميع
     if (g_uboMapped) {
         UniformBufferObject ubo{};
         Mat4 v = camera.getViewMatrix();
         Mat4 p = camera.getProjectionMatrix((float)swapchainExtent.width, (float)swapchainExtent.height);
         ubo.viewProj = p * v;
-        ubo.camPos = camera.pos;
+        ubo.camPos = camera.getPosition();
         memcpy(g_uboMapped, &ubo, sizeof(ubo));
     }
 
@@ -330,7 +327,7 @@ void VulkanRenderer::renderFrame() {
 
     VkDeviceSize offsets[] = {0};
 
-    // 1. رسم شبكة الأرضية الثابتة للأبد عند نقطة الأصل (Identity Push Constant)
+    // 1. رسم شبكة الأرضية الثابتة
     Mat4 gridModel = Mat4::identity();
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
@@ -338,21 +335,19 @@ void VulkanRenderer::renderFrame() {
     vkCmdBindVertexBuffers(cmd, 0, 1, &gridVbo, offsets);
     vkCmdDraw(cmd, gridVertexCount, 1, 0, 0);
 
-    // 2. رسم المكعب المستقل (Box) بمصفوفته الخاصة عبر Push Constants
+    // 2. رسم المكعب المستقل
     Mat4 boxModel = box.getModelMatrix();
 
-    // رسم أوجه المكعب
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.cubePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
     box.renderFaces(cmd);
 
-    // رسم حواف تحديد المكعب البرتقالية
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
     box.renderEdges(cmd);
 
-    // 3. رسم الجزمو بمصفوفة المكعب ليتحرك معه كقطعة واحدة
+    // 3. رسم الجزمو
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.gizmoPipeline);
     vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVbo, offsets);
