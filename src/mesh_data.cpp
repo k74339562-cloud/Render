@@ -66,14 +66,14 @@ static float distRayToSegment3D(const Ray& ray, const Vec3& p0, const Vec3& p1) 
 
 void MeshData::initDefaultCube(RenderEngine& engine) {
     vertices = {
-        {{-1, -1, -1}, {-0.577f, -0.577f, -0.577f}},
-        {{ 1, -1, -1}, { 0.577f, -0.577f, -0.577f}},
-        {{ 1,  1, -1}, { 0.577f,  0.577f, -0.577f}},
-        {{-1,  1, -1}, {-0.577f,  0.577f, -0.577f}},
-        {{-1, -1,  1}, {-0.577f, -0.577f,  0.577f}},
-        {{ 1, -1,  1}, { 0.577f, -0.577f,  0.577f}},
-        {{ 1,  1,  1}, { 0.577f,  0.577f,  0.577f}},
-        {{-1,  1,  1}, {-0.577f,  0.577f,  0.577f}}
+        {{-1, -1, -1}, {-0.577f, -0.577f, -0.577f}}, // 0
+        {{ 1, -1, -1}, { 0.577f, -0.577f, -0.577f}}, // 1
+        {{ 1,  1, -1}, { 0.577f,  0.577f, -0.577f}}, // 2
+        {{-1,  1, -1}, {-0.577f,  0.577f, -0.577f}}, // 3
+        {{-1, -1,  1}, {-0.577f, -0.577f,  0.577f}}, // 4
+        {{ 1, -1,  1}, { 0.577f, -0.577f,  0.577f}}, // 5
+        {{ 1,  1,  1}, { 0.577f,  0.577f,  0.577f}}, // 6
+        {{-1,  1,  1}, {-0.577f,  0.577f,  0.577f}}  // 7
     };
 
     edges = {
@@ -82,13 +82,14 @@ void MeshData::initDefaultCube(RenderEngine& engine) {
         {0, 4}, {1, 5}, {2, 6}, {3, 7}
     };
 
+    // تم تصحيح ترتيب الأوجه رياضياً لتدور عكس عقارب الساعة نحو الخارج تماماً
     faces = {
-        {{0, 1, 2, 3}, { 0,  0, -1}, { 0,  0, -1}}, // أسفل (-Z)
-        {{4, 5, 6, 7}, { 0,  0,  1}, { 0,  0,  1}}, // أعلى (+Z)
-        {{0, 1, 5, 4}, { 0, -1,  0}, { 0, -1,  0}}, // أمام (-Y)
-        {{2, 3, 7, 6}, { 0,  1,  0}, { 0,  1,  0}}, // خلف (+Y)
-        {{0, 3, 7, 4}, {-1,  0,  0}, {-1,  0,  0}}, // يسار (-X)
-        {{1, 2, 6, 5}, { 1,  0,  0}, { 1,  0,  0}}  // يمين (+X)
+        {{0, 3, 2, 1}, { 0,  0, -1}, { 0,  0, -1}}, // 1. أسفل (-Z) تم تصحيحه ليشير للخارج
+        {{4, 5, 6, 7}, { 0,  0,  1}, { 0,  0,  1}}, // 2. أعلى (+Z)
+        {{0, 1, 5, 4}, { 0, -1,  0}, { 0, -1,  0}}, // 3. أمام (-Y)
+        {{2, 3, 7, 6}, { 0,  1,  0}, { 0,  1,  0}}, // 4. خلف (+Y)
+        {{3, 0, 4, 7}, {-1,  0,  0}, {-1,  0,  0}}, // 5. يسار (-X) تم تصحيحه ليشير للخارج
+        {{1, 2, 6, 5}, { 1,  0,  0}, { 1,  0,  0}}  // 6. يمين (+X)
     };
 
     rebuildBuffers(engine);
@@ -123,12 +124,12 @@ void MeshData::rebuildBuffers(RenderEngine& engine) {
     // 2. بافر الحواف وخطوط التحديد
     std::vector<VtxLine> edgeLines;
     for (size_t i = 0; i < edges.size(); ++i) {
-        float r = 0.10f, g = 0.10f, b = 0.10f, a = 1.0f; // الحواف العادية داكنة
+        float r = 0.10f, g = 0.10f, b = 0.10f, a = 1.0f;
 
         if (isObjectSelected && selectMode == SelectionMode::OBJECT) {
-            r = 0.91f; g = 0.42f; b = 0.10f; // برتقالي بلندر (#E86C19) لتحديد الكائن
+            r = 0.91f; g = 0.42f; b = 0.10f; // برتقالي بلندر للكائن المحدد
         } else if (selectMode == SelectionMode::EDGE && (int)i == selectedEdgeIdx) {
-            r = 1.00f; g = 0.70f; b = 0.00f; // أصفر ذهبي ساطع للحافة المحددة
+            r = 1.00f; g = 0.70f; b = 0.00f; // أصفر ذهبي للحافة
         }
 
         const auto& p0 = vertices[edges[i].v0].pos;
@@ -143,17 +144,16 @@ void MeshData::rebuildBuffers(RenderEngine& engine) {
     void* eData; vkMapMemory(engine.device, edgeVboMemory, 0, edgeLines.size() * sizeof(VtxLine), 0, &eData);
     memcpy(eData, edgeLines.data(), edgeLines.size() * sizeof(VtxLine)); vkUnmapMemory(engine.device, edgeVboMemory);
 
-    // 3. بافر نقاط الرؤوس بنمط التعديل (Edit Mode Vertex Handles)
+    // 3. بافر نقاط الرؤوس
     std::vector<VtxLine> dots;
     if (selectMode == SelectionMode::VERTEX) {
-        float sz = 0.035f;
+        float sz = 0.040f;
         for (size_t i = 0; i < vertices.size(); ++i) {
-            float r = 0.15f, g = 0.15f, b = 0.15f;
+            float r = 0.18f, g = 0.18f, b = 0.18f;
             if ((int)i == selectedVertexIdx) {
-                r = 1.00f; g = 0.65f; b = 0.00f; // النقطة المحددة تتوهج بالأصفر الذهبي
+                r = 1.00f; g = 0.65f; b = 0.00f; // النقطة المحددة
             }
             Vec3 p = vertices[i].pos;
-            // رسم مكعب ميكروسكوبي يمثل نقطة الرأس
             dots.push_back({p.x - sz, p.y, p.z, r, g, b, 1.0f}); dots.push_back({p.x + sz, p.y, p.z, r, g, b, 1.0f});
             dots.push_back({p.x, p.y - sz, p.z, r, g, b, 1.0f}); dots.push_back({p.x, p.y + sz, p.z, r, g, b, 1.0f});
             dots.push_back({p.x, p.y, p.z - sz, r, g, b, 1.0f}); dots.push_back({p.x, p.y, p.z + sz, r, g, b, 1.0f});
@@ -272,13 +272,12 @@ Vec3 MeshData::getActiveGizmoPosition() const {
 }
 
 Mat4 MeshData::getActiveGizmoOrientation() const {
-    // بناء مصفوفة دوران تجعل الأسهم تتجه دوماً نحو خارج باطن المجسم
     Vec3 outZ = {0.0f, 0.0f, 1.0f};
 
     if (selectMode == SelectionMode::FACE && selectedFaceIdx >= 0) {
         outZ = faces[selectedFaceIdx].normal;
     } else if (selectMode == SelectionMode::VERTEX && selectedVertexIdx >= 0) {
-        outZ = vertices[selectedVertexIdx].pos.normalize(); // متجه من مركز المكعب للنقطة
+        outZ = vertices[selectedVertexIdx].pos.normalize();
     } else if (selectMode == SelectionMode::EDGE && selectedEdgeIdx >= 0) {
         Vec3 mid = (vertices[edges[selectedEdgeIdx].v0].pos + vertices[edges[selectedEdgeIdx].v1].pos) * 0.5f;
         outZ = mid.normalize();
@@ -306,15 +305,12 @@ Mat4 MeshData::getModelMatrix() const {
 
 void MeshData::draw(RenderEngine& engine) {
     Mat4 model = getModelMatrix();
-    // 1. رسم أوجه المكعب الطينية
     engine.drawMesh(faceVbo, faceIbo, 36, model);
 
-    // 2. رسم الحواف وخطوط التحديد
     if (edgeVbo && edgeVertexCount > 0) {
         engine.drawOverlayLines(edgeVbo, edgeVertexCount, model);
     }
 
-    // 3. رسم نقاط الرؤوس بنمط التعديل
     if (vertDotsVbo && vertDotsCount > 0) {
         engine.drawOverlayLines(vertDotsVbo, vertDotsCount, model);
     }
