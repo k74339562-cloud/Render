@@ -45,7 +45,7 @@ endif()
 set(SOURCES
     src/main.cpp
     src/camera.cpp
-    src/box.cpp
+    src/mesh_data.cpp
     src/gizmo.cpp
     src/render_engine.cpp
     src/vulkan_pipeline.cpp
