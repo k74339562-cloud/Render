@@ -19,9 +19,9 @@ void Camera::onPan(float dx, float dy) {
     Vec3 camRight = {-cosY, sinY, 0.0f};
     Vec3 camUp = {-sinY * std::sin(pitch), -cosY * std::sin(pitch), std::cos(pitch)};
 
-    // تم تصحيح الإشارة الرأسية: الرفع لأعلى يرفع المشهد والنزول لأسفل ينزل المشهد
+    // تم ضبط المحورين الأفقي والرأسي ليتبعا حركة الإصبعين بدقة 1:1
     float factor = dist * 0.001f;
-    Vec3 deltaMove = (camRight * (dx * factor)) + (camUp * (dy * factor));
+    Vec3 deltaMove = (camRight * (-dx * factor)) + (camUp * (dy * factor));
     target = target + deltaMove;
 }
 
