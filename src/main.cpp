@@ -3,7 +3,7 @@
 #include <cmath>
 #include "vulkan_renderer.h"
 
-enum NavState { NAV_IDLE, NAV_ORBIT, NAV_ZOOM_PAN };
+enum NavState { NAV_IDLE, NAV_ORBIT, NAV_ZOOM_PAN, NAV_GIZMO_DRAG };
 
 struct AppState {
     VulkanRenderer renderer;
@@ -23,45 +23,67 @@ static float calcDist(float x1, float y1, float x2, float y2) {
 static int32_t onInput(struct android_app* app, AInputEvent* event) {
     auto* s = (AppState*)app->userData;
 
-    // 1. منع الخروج بزر الرجوع (Back Button Lock)
+    // منع الخروج بزر الرجوع
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY) {
         int32_t keyCode = AKeyEvent_getKeyCode(event);
-        if (keyCode == AKEYCODE_BACK) {
-            // اعتراض الحدث واستهلاكه؛ لا يمكن الخروج إلا بحذف التطبيق من الخلفية
-            return 1;
-        }
+        if (keyCode == AKEYCODE_BACK) return 1;
     }
 
-    // 2. التحكم في الإيماءات واللمس الحر
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
         int action = AMotionEvent_getAction(event);
         int masked = action & AMOTION_EVENT_ACTION_MASK;
         size_t count = AMotionEvent_getPointerCount(event);
 
+        float screenW = (float)s->renderer.swapchainExtent.width;
+        float screenH = (float)s->renderer.swapchainExtent.height;
+
         if (masked == AMOTION_EVENT_ACTION_UP || masked == AMOTION_EVENT_ACTION_CANCEL) {
+            s->renderer.activeAxis = AXIS_NONE;
             s->state = NAV_IDLE;
             return 1;
         }
 
-        // حركة بإصبع واحد: دوران حر سلس (Free Orbit)
         if (count == 1) {
             float x = AMotionEvent_getX(event, 0);
             float y = AMotionEvent_getY(event, 0);
 
-            if (masked == AMOTION_EVENT_ACTION_DOWN || s->state != NAV_ORBIT) {
+            if (masked == AMOTION_EVENT_ACTION_DOWN) {
                 s->lastX = x; s->lastY = y;
-                s->state = NAV_ORBIT;
+
+                // فحص شعاع اللمس: هل لمس المستخدم أحد أسهم الجزمو؟
+                Ray ray = s->renderer.camera.getScreenRay(x, y, screenW, screenH);
+                GizmoAxis hit = s->renderer.testGizmoHit(ray);
+
+                if (hit != AXIS_NONE) {
+                    s->renderer.activeAxis = hit;
+                    s->state = NAV_GIZMO_DRAG; // بدء سحب المحور الملموس
+                } else {
+                    s->renderer.activeAxis = AXIS_NONE;
+                    s->state = NAV_ORBIT;      // لمس في الفراغ -> تدوير الكاميرا
+                }
                 return 1;
-            } else if (masked == AMOTION_EVENT_ACTION_MOVE && s->state == NAV_ORBIT) {
-                float dx = x - s->lastX;
-                float dy = y - s->lastY;
-                s->renderer.camera.onOrbit(dx, dy);
-                s->lastX = x; s->lastY = y;
-                return 1;
+            } 
+            else if (masked == AMOTION_EVENT_ACTION_MOVE) {
+                if (s->state == NAV_GIZMO_DRAG) {
+                    // سحب المكعب بدقة متناهية على المحور المختار
+                    Ray rayPrev = s->renderer.camera.getScreenRay(s->lastX, s->lastY, screenW, screenH);
+                    Ray rayCurr = s->renderer.camera.getScreenRay(x, y, screenW, screenH);
+                    s->renderer.dragGizmo(rayPrev, rayCurr);
+                    s->lastX = x; s->lastY = y;
+                    return 1;
+                } else if (s->state == NAV_ORBIT) {
+                    // دوران حر
+                    float dx = x - s->lastX;
+                    float dy = y - s->lastY;
+                    s->renderer.camera.onOrbit(dx, dy);
+                    s->lastX = x; s->lastY = y;
+                    return 1;
+                }
             }
         } 
-        // حركة بإصبعين: تحريك متوازن (Pan) + تقريب سلس (Zoom)
         else if (count >= 2) {
+            // إيماءات الإصبعين للتقريب والتحريك
+            s->renderer.activeAxis = AXIS_NONE;
             float x0 = AMotionEvent_getX(event, 0), y0 = AMotionEvent_getY(event, 0);
             float x1 = AMotionEvent_getX(event, 1), y1 = AMotionEvent_getY(event, 1);
             float dist = calcDist(x0, y0, x1, y1);
@@ -73,12 +95,10 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->state = NAV_ZOOM_PAN;
                 return 1;
             } else if (masked == AMOTION_EVENT_ACTION_MOVE && s->state == NAV_ZOOM_PAN) {
-                // تقريب
                 float deltaDist = dist - s->lastDist;
                 s->renderer.camera.onZoom(deltaDist);
                 s->lastDist = dist;
 
-                // تحريك في مستوى الكاميرا (Pan)
                 float dMidX = midX - s->lastMidX;
                 float dMidY = midY - s->lastMidY;
                 s->renderer.camera.onPan(dMidX, dMidY);
