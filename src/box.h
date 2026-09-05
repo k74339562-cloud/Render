@@ -1,6 +1,6 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include "math_3d.h"
+#include "render_engine.h"
 
 class Box {
 public:
@@ -14,15 +14,9 @@ public:
     VkBuffer edgesVbo = VK_NULL_HANDLE;
     VkDeviceMemory edgesVboMemory = VK_NULL_HANDLE;
 
-    void init(VkDevice device, VkPhysicalDevice physicalDevice);
-    void cleanup(VkDevice device);
-    void renderFaces(VkCommandBuffer cmd);
-    void renderEdges(VkCommandBuffer cmd);
-    Mat4 getModelMatrix() const;
+    void init(RenderEngine& engine);
+    void cleanup(RenderEngine& engine);
+    void draw(RenderEngine& engine);
 
-private:
-    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, 
-                      VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
-                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+    Mat4 getModelMatrix() const;
 };
