@@ -58,8 +58,17 @@ static float distToScreenSegment(float tx, float ty, const Vec2& p0, const Vec2&
 }
 
 GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW, float screenH) {
-    float shaftLen = 1.8f;
     Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
+
+    // 1. فحص لمس مركز الجزمو أولاً (نصف قطر 38 بكسل مريح للإبهام)
+    float distCenter = std::sqrt((touchX - pCenter.x) * (touchX - pCenter.x) + 
+                                 (touchY - pCenter.y) * (touchY - pCenter.y));
+    if (distCenter < 38.0f) {
+        return AXIS_CENTER;
+    }
+
+    // 2. فحص لمس الأسهم الثلاثة X, Y, Z
+    float shaftLen = 1.8f;
     Vec2 pX = camera.projectToScreen(box.position + Vec3(shaftLen, 0, 0), screenW, screenH);
     Vec2 pY = camera.projectToScreen(box.position + Vec3(0, shaftLen, 0), screenW, screenH);
     Vec2 pZ = camera.projectToScreen(box.position + Vec3(0, 0, shaftLen), screenW, screenH);
@@ -68,7 +77,7 @@ GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW
     float dY = distToScreenSegment(touchX, touchY, pCenter, pY);
     float dZ = distToScreenSegment(touchX, touchY, pCenter, pZ);
 
-    float threshold = 52.0f; // مساحة لمس مريحة للشاشات عالية الدقة
+    float threshold = 50.0f;
     GizmoAxis hit = AXIS_NONE;
     float minDist = threshold;
 
@@ -82,6 +91,24 @@ GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW
 void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH) {
     if (activeAxis == AXIS_NONE) return;
 
+    float camDist = (camera.getPosition() - box.position).length();
+    float worldUnitsPerPixel = (camDist * 0.0015f);
+
+    // التحريك الحر عند لمس مركز الجزمو (متطابق 100% مع حركة الإصبع دون أي انعكاس)
+    if (activeAxis == AXIS_CENTER) {
+        float cosY = std::cos(camera.yaw), sinY = std::sin(camera.yaw);
+        Vec3 camRight = {-cosY, sinY, 0.0f};
+        Vec3 camUp = {-sinY * std::sin(camera.pitch), -cosY * std::sin(camera.pitch), std::cos(camera.pitch)};
+
+        // dx لليمين واليسار (+dx) | dy للأعلى والأسفل (-dy لأن نظام الشاشات يعتبر النزول موجباً)
+        Vec3 deltaMove = (camRight * (dx * worldUnitsPerPixel)) + 
+                         (camUp * (-dy * worldUnitsPerPixel));
+
+        box.position = box.position + deltaMove;
+        return;
+    }
+
+    // التحريك المقيد عند لمس أحد الأسهم الثلاثة
     Vec3 axisDir3D = {0, 0, 0};
     if (activeAxis == AXIS_X) axisDir3D = {1.0f, 0.0f, 0.0f};
     if (activeAxis == AXIS_Y) axisDir3D = {0.0f, 1.0f, 0.0f};
@@ -99,10 +126,6 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
     screenDirY /= len;
 
     float dotMove = (dx * screenDirX) + (dy * screenDirY);
-    // تم التصحيح: استخدام camera.getPosition() بدلاً من camera.pos
-    float camDist = (camera.getPosition() - box.position).length();
-    float worldUnitsPerPixel = (camDist * 0.0015f);
-
     box.position = box.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
 }
 
@@ -297,7 +320,6 @@ void VulkanRenderer::renderFrame() {
 
     vkResetFences(device, 1, &inFlightFence);
 
-    // تم التصحيح: استدعاء getPosition() بنجاح بدون أخطاء تجميع
     if (g_uboMapped) {
         UniformBufferObject ubo{};
         Mat4 v = camera.getViewMatrix();
