@@ -3,24 +3,19 @@
 #include <algorithm>
 
 void Camera::onOrbit(float dx, float dy) {
-    // تدوير حر وطبيعي حول نقطة الارتكاز
     yaw += dx * 0.005f;
     pitch = std::clamp(pitch + dy * 0.005f, -1.55f, 1.55f);
 }
 
 void Camera::onZoom(float delta) {
-    // تقريب أسي ناعم دون القفز أو ضياع الهدف
     dist = std::clamp(dist * (1.0f - delta * 0.004f), 0.8f, 120.0f);
 }
 
 void Camera::onPan(float dx, float dy) {
-    // حساب محاور الكاميرا اللحظية بنظام Z-Up
     float cosY = std::cos(yaw), sinY = std::sin(yaw);
     Vec3 camRight = {-cosY, sinY, 0.0f};
     Vec3 camUp = {-sinY * std::sin(pitch), -cosY * std::sin(pitch), std::cos(pitch)};
 
-    // تحريك نقطة الارتكاز في فضاء شاشة الكاميرا مباشرة (Lockstep Panning)
-    // هذا يمنع انفصال الـ Pivot عن مركز المجسم تماماً
     float factor = dist * 0.00085f;
     Vec3 deltaMove = (camRight * (-dx * factor)) + (camUp * (dy * factor));
     ofs = ofs + deltaMove;
@@ -52,4 +47,20 @@ Mat4 Camera::getProjectionMatrix(float width, float height) const {
     r.m[11] = -1.0f;
     r.m[14] = -(farZ * nearZ) / (farZ - nearZ);
     return r;
+}
+
+Ray Camera::getScreenRay(float touchX, float touchY, float screenW, float screenH) const {
+    // تحويل إحداثيات اللمس إلى مساحة NDC بنظام Vulkan
+    float ndcX = (2.0f * touchX) / screenW - 1.0f;
+    float ndcY = 1.0f - (2.0f * touchY) / screenH; // مراعاة Viewport السالب
+
+    Mat4 invVP = (getProjectionMatrix(screenW, screenH) * getViewMatrix()).inverse();
+
+    Vec3 pNear = invVP.transformPoint(Vec3(ndcX, ndcY, 0.0f));
+    Vec3 pFar  = invVP.transformPoint(Vec3(ndcX, ndcY, 1.0f));
+
+    Ray ray;
+    ray.origin = pNear;
+    ray.dir = (pFar - pNear).normalize();
+    return ray;
 }
