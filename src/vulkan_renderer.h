@@ -6,6 +6,13 @@
 #include "gizmo.h"
 #include "vulkan_pipeline.h"
 
+enum GizmoAxis {
+    AXIS_NONE = 0,
+    AXIS_X,
+    AXIS_Y,
+    AXIS_Z
+};
+
 struct UniformBufferObject {
     Mat4 viewProj;
     Mat4 model;
@@ -57,9 +64,17 @@ public:
     Camera camera;
     Gizmo gizmo;
 
+    // موقع المكعب في الفضاء وحالته التفاعلية
+    Vec3 cubePosition = {0.0f, 0.0f, 0.0f};
+    GizmoAxis activeAxis = AXIS_NONE;
+
     bool init(ANativeWindow* window);
     void cleanup();
     void renderFrame();
+
+    // دوال فحص التقاطع والتحريك التفاعلي
+    GizmoAxis testGizmoHit(const Ray& ray);
+    void dragGizmo(const Ray& rayPrev, const Ray& rayCurr);
 
 private:
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
