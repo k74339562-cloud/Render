@@ -3,9 +3,8 @@
 #include <algorithm>
 
 void Camera::onOrbit(float dx, float dy) {
-    // تم عكس الإشارات: السحب لليمين يلف المشهد لليمين، والسحب لأعلى يرفع الرؤية لأعلى
     yaw += dx * 0.005f;
-    pitch = std::clamp(pitch - dy * 0.005f, -1.55f, 1.55f);
+    pitch = std::clamp(pitch + dy * 0.005f, -1.55f, 1.55f);
 }
 
 void Camera::onZoom(float delta) {
@@ -13,7 +12,6 @@ void Camera::onZoom(float delta) {
 }
 
 void Camera::onPan(float dx, float dy) {
-    // حركة متوازية ودقيقة مع شاشة العرض بنظام Z-Up
     float cosY = std::cos(yaw), sinY = std::sin(yaw);
     Vec3 right = {-cosY, sinY, 0.0f};
     Vec3 up = {-sinY * std::sin(pitch), -cosY * std::sin(pitch), std::cos(pitch)};
@@ -32,7 +30,7 @@ Vec3 Camera::getPosition() const {
 
 Mat4 Camera::getViewMatrix() const {
     Vec3 eye = getPosition();
-    return Mat4::lookAt(eye, ofs, Vec3(0.0f, 0.0f, 1.0f)); // +Z هو الأعلى دائماً كبلندر
+    return Mat4::lookAt(eye, ofs, Vec3(0.0f, 0.0f, 1.0f));
 }
 
 Mat4 Camera::getProjectionMatrix(float width, float height) const {
