@@ -28,17 +28,37 @@ uint32_t VulkanPipeline::findMemoryType(VkPhysicalDevice physicalDevice, uint32_
     return 0;
 }
 
+VkFormat VulkanPipeline::findSupportedDepthFormat(VkPhysicalDevice physicalDevice) {
+    VkFormat candidates[] = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D32_SFLOAT_S8_UINT,
+        VK_FORMAT_D24_UNORM_S8_UINT,
+        VK_FORMAT_D16_UNORM
+    };
+    for (VkFormat format : candidates) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+        if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            return format;
+        }
+    }
+    return VK_FORMAT_D16_UNORM;
+}
+
 bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFormat swapchainFormat, 
                           VkExtent2D extent, const std::vector<VkImageView>& swapchainImageViews, VkBuffer uboBuffer) {
-    // 1. إنشاء صورة العمق (Depth Image)
+    depthFormat = findSupportedDepthFormat(physicalDevice);
+
+    // 1. إنشاء صورة العمق بصيغة مدعومة 100% من عتاد الهاتف
     VkImageCreateInfo depthImgInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     depthImgInfo.imageType = VK_IMAGE_TYPE_2D;
     depthImgInfo.extent = { extent.width, extent.height, 1 };
     depthImgInfo.mipLevels = 1;
     depthImgInfo.arrayLayers = 1;
-    depthImgInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    depthImgInfo.format = depthFormat;
     depthImgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     depthImgInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    depthImgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     vkCreateImage(device, &depthImgInfo, nullptr, &depthImage);
 
     VkMemoryRequirements dMemReq;
@@ -52,7 +72,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     VkImageViewCreateInfo dViewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
     dViewInfo.image = depthImage;
     dViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    dViewInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    dViewInfo.format = depthFormat;
     dViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     dViewInfo.subresourceRange.levelCount = 1;
     dViewInfo.subresourceRange.layerCount = 1;
@@ -67,7 +87,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    attachments[1].format = VK_FORMAT_D24_UNORM_S8_UINT;
+    attachments[1].format = depthFormat;
     attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -82,14 +102,24 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     subpass.pColorAttachments = &colorRef;
     subpass.pDepthStencilAttachment = &depthRef;
 
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
     VkRenderPassCreateInfo rpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     rpci.attachmentCount = 2;
     rpci.pAttachments = attachments;
     rpci.subpassCount = 1;
     rpci.pSubpasses = &subpass;
+    rpci.dependencyCount = 1;
+    rpci.pDependencies = &dependency;
     vkCreateRenderPass(device, &rpci, nullptr, &renderPass);
 
-    // 3. إنشاء الـ Framebuffers
+    // 3. إنشاء Framebuffers
     framebuffers.resize(swapchainImageViews.size());
     for (size_t i = 0; i < swapchainImageViews.size(); i++) {
         VkImageView fbViews[] = { swapchainImageViews[i], depthImageView };
@@ -103,7 +133,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
         vkCreateFramebuffer(device, &fbci, nullptr, &framebuffers[i]);
     }
 
-    // 4. Descriptor Set للـ UBO
+    // 4. Descriptor Set
     VkDescriptorSetLayoutBinding uboBinding{};
     uboBinding.binding = 0;
     uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -137,7 +167,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     wds.pBufferInfo = &dbi;
     vkUpdateDescriptorSets(device, 1, &wds, 0, nullptr);
 
-    // 5. خطوط أنابيب الرسوميات (Pipelines)
+    // 5. إعداد Pipelines
     VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     plci.setLayoutCount = 1;
     plci.pSetLayouts = &descriptorSetLayout;
@@ -151,7 +181,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     pvsi.scissorCount = 1;
     pvsi.pScissors = &scissor;
 
-    // (أ) بايبلاين شيدر استوديو بلندر للمكعب
+    // (أ) شيدر المكعب
     VkShaderModule cVs = createShaderModule(device, cube_vert_data, sizeof(cube_vert_data));
     VkShaderModule cFs = createShaderModule(device, cube_frag_data, sizeof(cube_frag_data));
 
@@ -178,12 +208,16 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     prsi.cullMode = VK_CULL_MODE_BACK_BIT;
     prsi.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     prsi.lineWidth = 1.0f;
+    // تفعيل إزاحة العمق لمنع وميض خطوط الحواف
+    prsi.depthBiasEnable = VK_TRUE;
+    prsi.depthBiasConstantFactor = 1.25f;
+    prsi.depthBiasSlopeFactor = 1.75f;
 
     VkPipelineMultisampleStateCreateInfo pmssi{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     pmssi.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
     VkPipelineDepthStencilStateCreateInfo pdssi{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    pdssi.depthTestEnable = VK_TRUE; pdssi.depthWriteEnable = VK_TRUE; pdssi.depthCompareOp = VK_COMPARE_OP_LESS;
+    pdssi.depthTestEnable = VK_TRUE; pdssi.depthWriteEnable = VK_TRUE; pdssi.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
     VkPipelineColorBlendAttachmentState cbas{};
     cbas.colorWriteMask = 0xF;
@@ -201,7 +235,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     vkDestroyShaderModule(device, cVs, nullptr);
     vkDestroyShaderModule(device, cFs, nullptr);
 
-    // (ب) بايبلاين خطوط شبكة الأرضية وحواف المكعب الداكنة
+    // (ب) شيدر خطوط شبكة الأرضية وحواف المكعب
     VkShaderModule lVs = createShaderModule(device, line_vert_data, sizeof(line_vert_data));
     VkShaderModule lFs = createShaderModule(device, line_frag_data, sizeof(line_frag_data));
 
@@ -225,20 +259,23 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     lPiasi.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
 
     VkPipelineRasterizationStateCreateInfo lPrsi = prsi;
+    lPrsi.depthBiasEnable = VK_FALSE;
     lPrsi.cullMode = VK_CULL_MODE_NONE;
-    lPrsi.lineWidth = 2.0f;
+    lPrsi.lineWidth = 1.8f;
 
     VkGraphicsPipelineCreateInfo lGpci = cGpci;
     lGpci.pStages = lStages; lGpci.pVertexInputState = &lPvisi;
     lGpci.pInputAssemblyState = &lPiasi; lGpci.pRasterizationState = &lPrsi;
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &lGpci, nullptr, &linePipeline);
 
-    // (ج) بايبلاين الجزمو الصلب (مثلثات تظهر دائماً في الواجهة)
+    // (ج) شيدر الجزمو
     VkPipelineInputAssemblyStateCreateInfo gPiasi{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     gPiasi.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
     VkPipelineDepthStencilStateCreateInfo gPdssi = pdssi;
-    gPdssi.depthTestEnable = VK_FALSE; // فوق كل شيء كبلندر
+    gPdssi.depthTestEnable = VK_TRUE;
+    gPdssi.depthWriteEnable = VK_TRUE;
+    gPdssi.depthCompareOp = VK_COMPARE_OP_ALWAYS; // يظهر الجزمو بوضوح دون أن يخفيه المكعب
 
     VkGraphicsPipelineCreateInfo gGpci = lGpci;
     gGpci.pInputAssemblyState = &gPiasi; gGpci.pDepthStencilState = &gPdssi;
@@ -265,7 +302,6 @@ void VulkanPipeline::cleanup(VkDevice device) {
     framebuffers.clear();
 
     vkDestroyRenderPass(device, renderPass, nullptr);
-
     vkDestroyImageView(device, depthImageView, nullptr);
     vkDestroyImage(device, depthImage, nullptr);
     vkFreeMemory(device, depthImageMemory, nullptr);
