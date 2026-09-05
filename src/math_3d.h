@@ -108,7 +108,7 @@ struct Mat4 {
                  src[12] * src[7] * src[9];
 
         dst[12] = -src[4]  * src[9] * src[14] + 
-                   src[4]  * src[10] * src[13] +
+                   src[4]  * src[10] * src[13] + 
                    src[8]  * src[5] * src[14] - 
                    src[8]  * src[6] * src[13] - 
                    src[12] * src[5] * src[10] + 
