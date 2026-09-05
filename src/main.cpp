@@ -3,7 +3,7 @@
 #include <cmath>
 #include "vulkan_renderer.h"
 
-enum NavState { NAV_IDLE, NAV_ORBIT, NAV_ZOOM_PAN, NAV_GIZMO_DRAG };
+enum NavState { NAV_IDLE, NAV_FREE_LOOK, NAV_FLY_PAN, NAV_GIZMO_DRAG };
 
 struct AppState {
     VulkanRenderer renderer;
@@ -23,7 +23,6 @@ static float calcDist(float x1, float y1, float x2, float y2) {
 static int32_t onInput(struct android_app* app, AInputEvent* event) {
     auto* s = (AppState*)app->userData;
 
-    // منع الخروج بزر الرجوع
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY) {
         int32_t keyCode = AKeyEvent_getKeyCode(event);
         if (keyCode == AKEYCODE_BACK) return 1;
@@ -43,6 +42,7 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
             return 1;
         }
 
+        // 1. حركة بإصبع واحد: دوران حر في مكان الكاميرا أو سحب الجزمو
         if (count == 1) {
             float x = AMotionEvent_getX(event, 0);
             float y = AMotionEvent_getY(event, 0);
@@ -50,55 +50,50 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
             if (masked == AMOTION_EVENT_ACTION_DOWN) {
                 s->lastX = x; s->lastY = y;
 
-                // فحص شعاع اللمس: هل لمس المستخدم أحد أسهم الجزمو؟
-                Ray ray = s->renderer.camera.getScreenRay(x, y, screenW, screenH);
-                GizmoAxis hit = s->renderer.testGizmoHit(ray);
-
+                GizmoAxis hit = s->renderer.testGizmoHit(x, y, screenW, screenH);
                 if (hit != AXIS_NONE) {
                     s->renderer.activeAxis = hit;
-                    s->state = NAV_GIZMO_DRAG; // بدء سحب المحور الملموس
+                    s->state = NAV_GIZMO_DRAG;
                 } else {
                     s->renderer.activeAxis = AXIS_NONE;
-                    s->state = NAV_ORBIT;      // لمس في الفراغ -> تدوير الكاميرا
+                    s->state = NAV_FREE_LOOK; // دوران حر للكاميرا في مكانها
                 }
                 return 1;
             } 
             else if (masked == AMOTION_EVENT_ACTION_MOVE) {
+                float dx = x - s->lastX;
+                float dy = y - s->lastY;
+
                 if (s->state == NAV_GIZMO_DRAG) {
-                    // سحب المكعب بدقة متناهية على المحور المختار
-                    Ray rayPrev = s->renderer.camera.getScreenRay(s->lastX, s->lastY, screenW, screenH);
-                    Ray rayCurr = s->renderer.camera.getScreenRay(x, y, screenW, screenH);
-                    s->renderer.dragGizmo(rayPrev, rayCurr);
-                    s->lastX = x; s->lastY = y;
-                    return 1;
-                } else if (s->state == NAV_ORBIT) {
-                    // دوران حر
-                    float dx = x - s->lastX;
-                    float dy = y - s->lastY;
-                    s->renderer.camera.onOrbit(dx, dy);
-                    s->lastX = x; s->lastY = y;
-                    return 1;
+                    s->renderer.dragGizmo(dx, dy, screenW, screenH);
+                } else if (s->state == NAV_FREE_LOOK) {
+                    s->renderer.camera.onLook(dx, dy);
                 }
+
+                s->lastX = x; s->lastY = y;
+                return 1;
             }
         } 
+        // 2. حركة بإصبعين: تحريك الكاميرا (Pan) وطيران (Fly) للأمام والخلف
         else if (count >= 2) {
-            // إيماءات الإصبعين للتقريب والتحريك
             s->renderer.activeAxis = AXIS_NONE;
             float x0 = AMotionEvent_getX(event, 0), y0 = AMotionEvent_getY(event, 0);
             float x1 = AMotionEvent_getX(event, 1), y1 = AMotionEvent_getY(event, 1);
             float dist = calcDist(x0, y0, x1, y1);
             float midX = (x0 + x1) * 0.5f, midY = (y0 + y1) * 0.5f;
 
-            if (masked == AMOTION_EVENT_ACTION_POINTER_DOWN || s->state != NAV_ZOOM_PAN) {
+            if (masked == AMOTION_EVENT_ACTION_POINTER_DOWN || s->state != NAV_FLY_PAN) {
                 s->lastDist = dist;
                 s->lastMidX = midX; s->lastMidY = midY;
-                s->state = NAV_ZOOM_PAN;
+                s->state = NAV_FLY_PAN;
                 return 1;
-            } else if (masked == AMOTION_EVENT_ACTION_MOVE && s->state == NAV_ZOOM_PAN) {
+            } else if (masked == AMOTION_EVENT_ACTION_MOVE && s->state == NAV_FLY_PAN) {
+                // تباعد وتقارب الإصبعين = طيران للأمام والخلف
                 float deltaDist = dist - s->lastDist;
-                s->renderer.camera.onZoom(deltaDist);
+                s->renderer.camera.onFly(deltaDist);
                 s->lastDist = dist;
 
+                // حركة الإصبعين معاً = تحريك الكاميرا
                 float dMidX = midX - s->lastMidX;
                 float dMidY = midY - s->lastMidY;
                 s->renderer.camera.onPan(dMidX, dMidY);
@@ -109,7 +104,7 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 int remainingIndex = (upIndex == 0) ? 1 : 0;
                 s->lastX = AMotionEvent_getX(event, remainingIndex);
                 s->lastY = AMotionEvent_getY(event, remainingIndex);
-                s->state = NAV_ORBIT;
+                s->state = NAV_FREE_LOOK;
                 return 1;
             }
         }
