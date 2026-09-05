@@ -9,7 +9,7 @@ void Camera::onOrbit(float dx, float dy) {
 
 void Camera::onZoom(float ratio) {
     if (ratio <= 0.001f) return;
-    // تقريب آمن يمنع الهروب إلى الفراغ الأسود
+    // كود الزوم الخاص بك المعتمد
     dist = std::clamp(dist / ratio, 1.0f, 50.0f);
 }
 
