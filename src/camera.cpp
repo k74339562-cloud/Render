@@ -28,7 +28,9 @@ Vec3 Camera::getPosition() const {
 }
 
 Mat4 Camera::getViewMatrix() const {
-    return Mat4::lookAt(getPosition(), target, Vec3(0, 1, 0));
+    // ربط مصفوفة الرؤية بموقع الكاميرا ومركز المكعب مباشرة وبدون أي افتراضات منفصلة
+    Vec3 eye = getPosition();
+    return Mat4::lookAt(eye, ofs, Vec3(0.0f, 1.0f, 0.0f));
 }
 
 Mat4 Camera::getProjectionMatrix(float width, float height) const {
