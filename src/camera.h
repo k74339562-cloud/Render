@@ -3,10 +3,10 @@
 
 class Camera {
 public:
-    Vec3 ofs = {0.0f, 0.0f, 0.0f};
-    float dist = 7.2f;
-    float yaw = -0.785f;  // زاوية بلندر الكلاسيكية (-45 درجة)
-    float pitch = 0.523f; // زاوية بلندر الكلاسيكية (30 درجة)
+    Vec3 ofs = {0.0f, 0.0f, 0.0f}; // نقطة ارتكاز الكاميرا (Pivot)
+    float dist = 7.0f;              // المسافة عن الهدف
+    float yaw = -0.785f;            // الدوران الأفقي (زاوية بلندر الكلاسيكية)
+    float pitch = 0.523f;           // زاوية الارتفاع
 
     void onOrbit(float dx, float dy);
     void onZoom(float delta);
