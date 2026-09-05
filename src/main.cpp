@@ -14,6 +14,7 @@ struct AppState {
     float lastX = 0, lastY = 0;
     float lastMidX = 0, lastMidY = 0;
     float lastDist = 0;
+    float downX = 0, downY = 0;
 
     std::chrono::steady_clock::time_point lastTapTime;
 };
@@ -26,7 +27,6 @@ static float calcDist(float x1, float y1, float x2, float y2) {
 static int32_t onInput(struct android_app* app, AInputEvent* event) {
     auto* s = (AppState*)app->userData;
 
-    // منع الخروج بزر الرجوع
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY) {
         int32_t keyCode = AKeyEvent_getKeyCode(event);
         if (keyCode == AKEYCODE_BACK) return 1;
@@ -37,35 +37,48 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
         int masked = action & AMOTION_EVENT_ACTION_MASK;
         size_t count = AMotionEvent_getPointerCount(event);
 
-        // تم التصحيح: استدعاء أبعاد الشاشة من مكتبة الرندر المنفصلة
         float screenW = (float)s->renderer.engine.swapchainExtent.width;
         float screenH = (float)s->renderer.engine.swapchainExtent.height;
 
+        // ميزة اللمس بـ 3 أصابع معاً للتبديل بين أوضاع بلندر: كائن -> رؤوس -> حواف -> أوجه
+        if (count == 3 && masked == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+            s->renderer.switchSelectionMode();
+            s->state = NAV_IDLE;
+            return 1;
+        }
+
         if (masked == AMOTION_EVENT_ACTION_UP || masked == AMOTION_EVENT_ACTION_CANCEL) {
+            if (s->state == NAV_ORBIT || s->state == NAV_IDLE) {
+                float totalDrag = calcDist(s->downX, s->downY, s->lastX, s->lastY);
+                // إذا كان نقراً خفيفاً دون سحب = فحص التحديد أو إلغاء التحديد بالنقر في الفراغ
+                if (totalDrag < 15.0f) {
+                    s->renderer.handleTapSelection(s->downX, s->downY, screenW, screenH);
+                }
+            }
             s->renderer.activeAxis = AXIS_NONE;
             s->state = NAV_IDLE;
             return 1;
         }
 
-        // 1. حركة بإصبع واحد
         if (count == 1) {
             float x = AMotionEvent_getX(event, 0);
             float y = AMotionEvent_getY(event, 0);
 
             if (masked == AMOTION_EVENT_ACTION_DOWN) {
+                s->downX = x; s->downY = y;
+                s->lastX = x; s->lastY = y;
+
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - s->lastTapTime).count();
                 s->lastTapTime = now;
 
-                // ميزة النقر المزدوج لإعادة التركيز (Double Tap to Focus)
                 if (elapsed < 300) {
-                    s->renderer.camera.focusOn(s->renderer.box.position);
+                    s->renderer.camera.focusOn(s->renderer.mesh.position);
                     s->state = NAV_IDLE;
                     return 1;
                 }
 
-                s->lastX = x; s->lastY = y;
-
+                // فحص لمس الجزمو إذا كان ظاهراً
                 GizmoAxis hit = s->renderer.testGizmoHit(x, y, screenW, screenH);
                 if (hit != AXIS_NONE) {
                     s->renderer.activeAxis = hit;
@@ -90,7 +103,6 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 return 1;
             }
         } 
-        // 2. حركة بإصبعين: تحريك المشهد (Pan) والتقريب (Zoom)
         else if (count >= 2) {
             s->renderer.activeAxis = AXIS_NONE;
             float x0 = AMotionEvent_getX(event, 0), y0 = AMotionEvent_getY(event, 0);
