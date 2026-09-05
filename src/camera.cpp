@@ -35,10 +35,10 @@ Vec3 Camera::getPosition() const {
 
 // معادلة مصفوفة الرؤية الرسمية في بلندر: T(0,0,-dist) * R(pitch) * R(yaw) * T(-ofs)
 Mat4 Camera::getViewMatrix() const {
-    Mat4 tNegOfs = Mat4::identity();
-    tNegOfs.m[12] = -ofs.x;
-    tNegOfs.m[13] = -ofs.y;
-    tNegOfs.m[14] = -ofs.z;
+    // ربط مصفوفة الرؤية بموقع الكاميرا ومركز المكعب مباشرة وبدون أي افتراضات منفصلة
+    Vec3 eye = getPosition();
+    return Mat4::lookAt(eye, ofs, Vec3(0.0f, 1.0f, 0.0f));
+}
 
     Mat4 rY = Mat4::identity();
     float cY = std::cos(yaw), sY = std::sin(yaw);
