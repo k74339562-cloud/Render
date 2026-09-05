@@ -1,5 +1,6 @@
 #include "vulkan_renderer.h"
 #include <cmath>
+#include <cstring>
 
 struct VertexLine { float x, y, z; float r, g, b, a; };
 
@@ -112,13 +113,11 @@ void VulkanRenderer::handleTapSelection(float touchX, float touchY, float screen
     Ray ray = camera.getScreenRay(touchX, touchY, screenW, screenH);
     float dist = 0.0f;
 
-    // 1. فحص النقر في الفراغ لإلغاء التحديد وإخفاء الجزمو
     if (mesh.selectMode == SelectionMode::OBJECT) {
         if (mesh.pickObject(ray, dist)) {
             mesh.isObjectSelected = true;
             isGizmoVisible = true;
         } else {
-            // النقر في الفراغ = إخفاء الجزمو وإلغاء التحديد
             mesh.deselectAll();
             isGizmoVisible = false;
         }
@@ -159,7 +158,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 
     mesh.initDefaultCube(engine);
 
-    // شبكة الأرضية
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -191,7 +189,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(engine.device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(engine.device, gridVboMemory);
 
-    // تهيئة الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     engine.createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
@@ -219,13 +216,9 @@ void VulkanRenderer::renderFrame() {
 
     if (!engine.beginFrame(v, p, eye)) return;
 
-    // 1. رسم شبكة الأرضية الثابتة
     engine.drawLines(gridVbo, gridVertexCount, Mat4::identity());
-
-    // 2. رسم المجسم وعناصره المحددة
     mesh.draw(engine);
 
-    // 3. رسم الجزمو الديناميكي فقط إذا كان هناك عنصر محدد
     if (isGizmoVisible) {
         Mat4 gizmoTransform = mesh.getActiveGizmoOrientation();
         engine.drawGizmo(gizmoVbo, gizmoVertexCount, gizmoTransform);
