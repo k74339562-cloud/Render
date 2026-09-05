@@ -10,7 +10,6 @@ struct AppState {
     NavState state = NAV_IDLE;
     bool animating = false;
 
-    // نقاط التثبيت (Anchors) لمنع قفزات الـ Delta
     float lastX = 0, lastY = 0;
     float lastMidX = 0, lastMidY = 0;
     float lastDist = 0;
@@ -28,12 +27,16 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
         int masked = action & AMOTION_EVENT_ACTION_MASK;
         size_t count = AMotionEvent_getPointerCount(event);
 
+        if (masked == AMOTION_EVENT_ACTION_UP || masked == AMOTION_EVENT_ACTION_CANCEL) {
+            s->state = NAV_IDLE;
+            return 1;
+        }
+
         if (count == 1) {
             float x = AMotionEvent_getX(event, 0);
             float y = AMotionEvent_getY(event, 0);
 
             if (masked == AMOTION_EVENT_ACTION_DOWN || s->state != NAV_ORBIT) {
-                // تصفير نقطة البداية فوراً
                 s->lastX = x; s->lastY = y;
                 s->state = NAV_ORBIT;
                 return 1;
@@ -43,9 +46,6 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->renderer.camera.onOrbit(dx, dy);
                 s->lastX = x; s->lastY = y;
                 return 1;
-            } else if (masked == AMOTION_EVENT_ACTION_UP) {
-                s->state = NAV_IDLE;
-                return 1;
             }
         } else if (count >= 2) {
             float x0 = AMotionEvent_getX(event, 0), y0 = AMotionEvent_getY(event, 0);
@@ -54,25 +54,27 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
             float midX = (x0 + x1) * 0.5f, midY = (y0 + y1) * 0.5f;
 
             if (masked == AMOTION_EVENT_ACTION_POINTER_DOWN || s->state != NAV_ZOOM_PAN) {
-                // تصفير نقاط اللمس فور دخول الإصبع الثاني لحذف قفزة الـ 200 بكسل
                 s->lastDist = dist;
                 s->lastMidX = midX; s->lastMidY = midY;
                 s->state = NAV_ZOOM_PAN;
                 return 1;
             } else if (masked == AMOTION_EVENT_ACTION_MOVE && s->state == NAV_ZOOM_PAN) {
-                // تقريب أسي ناعم
                 float deltaDist = dist - s->lastDist;
                 s->renderer.camera.onZoom(deltaDist);
                 s->lastDist = dist;
 
-                // تحريك متوازن (Pan)
                 float dMidX = midX - s->lastMidX;
                 float dMidY = midY - s->lastMidY;
                 s->renderer.camera.onPan(dMidX, dMidY);
                 s->lastMidX = midX; s->lastMidY = midY;
                 return 1;
             } else if (masked == AMOTION_EVENT_ACTION_POINTER_UP) {
-                s->state = NAV_IDLE;
+                // منع قفزة الشاشة عند رفع أحد الأصابع
+                int upIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+                int remainingIndex = (upIndex == 0) ? 1 : 0;
+                s->lastX = AMotionEvent_getX(event, remainingIndex);
+                s->lastY = AMotionEvent_getY(event, remainingIndex);
+                s->state = NAV_ORBIT;
                 return 1;
             }
         }
