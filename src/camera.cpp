@@ -1,22 +1,17 @@
 #include "camera.h"
-#include <algorithm>
 #include <cmath>
+#include <algorithm>
 
-// دوران بلندر المداري (Turntable Orbit) - يغير الزوايا فقط ولا يلمس مركز المكعب ofs
 void Camera::onOrbit(float dx, float dy) {
     yaw -= dx * 0.006f;
-    // قفل زاوية الارتفاع عند 89 درجة لمنع انقلاب الكاميرا (Gimbal Lock)
     pitch = std::clamp(pitch + dy * 0.006f, -1.55f, 1.55f);
 }
 
-// تقريب بلندر الأسي الناعم (Exponential Zoom)
 void Camera::onZoom(float delta) {
     dist = std::clamp(dist * (1.0f - delta * 0.005f), 1.5f, 50.0f);
 }
 
-// إزاحة بلندر المتعامدة مع زاوية الكاميرا (Pan)
 void Camera::onPan(float dx, float dy) {
-    // حساب متجهات الرؤية المتعامدة
     float cosY = std::cos(yaw), sinY = std::sin(yaw);
     Vec3 right = {cosY, 0.0f, -sinY};
     Vec3 up = {-sinY * std::sin(pitch), std::cos(pitch), -cosY * std::sin(pitch)};
@@ -33,27 +28,10 @@ Vec3 Camera::getPosition() const {
     );
 }
 
-// معادلة مصفوفة الرؤية الرسمية في بلندر: T(0,0,-dist) * R(pitch) * R(yaw) * T(-ofs)
 Mat4 Camera::getViewMatrix() const {
-    // ربط مصفوفة الرؤية بموقع الكاميرا ومركز المكعب مباشرة وبدون أي افتراضات منفصلة
+    // بناء مصفوفة الرؤية بدقة عبر LookAt المباشرة كما اتفقنا
     Vec3 eye = getPosition();
     return Mat4::lookAt(eye, ofs, Vec3(0.0f, 1.0f, 0.0f));
-}
-
-    Mat4 rY = Mat4::identity();
-    float cY = std::cos(yaw), sY = std::sin(yaw);
-    rY.m[0] = cY;  rY.m[2] = sY;
-    rY.m[8] = -sY; rY.m[10] = cY;
-
-    Mat4 rX = Mat4::identity();
-    float cP = std::cos(pitch), sP = std::sin(pitch);
-    rX.m[5] = cP;  rX.m[6] = -sP;
-    rX.m[9] = sP;  rX.m[10] = cP;
-
-    Mat4 tDist = Mat4::identity();
-    tDist.m[14] = -dist; // إرجاع عين الكاميرا للخلف بمقدار dist
-
-    return tDist * (rX * (rY * tNegOfs));
 }
 
 Mat4 Camera::getProjectionMatrix(float width, float height) const {
@@ -65,7 +43,7 @@ Mat4 Camera::getProjectionMatrix(float width, float height) const {
     float tanHalf = std::tan(fovRad * 0.5f);
     r.m[0] = 1.0f / (aspect * tanHalf);
     r.m[5] = 1.0f / tanHalf;
-    // مصفوفة Vulkan الدقيقة للعمق [0, 1]
+    // ضبط عمق Z الخاص بـ Vulkan الصافي [0, 1]
     r.m[10] = farZ / (nearZ - farZ);
     r.m[11] = -1.0f;
     r.m[14] = -(farZ * nearZ) / (farZ - nearZ);
