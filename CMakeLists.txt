@@ -12,12 +12,44 @@ include_directories(
     src
 )
 
+find_program(GLSLC glslc HINTS ${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME})
+if(GLSLC)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube_vert.h
+        COMMAND ${GLSLC} -mfmt=c ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube.vert -o ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube_vert.h
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube.vert
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube_frag.h
+        COMMAND ${GLSLC} -mfmt=c ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube.frag -o ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube_frag.h
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube.frag
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line_vert.h
+        COMMAND ${GLSLC} -mfmt=c ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line.vert -o ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line_vert.h
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line.vert
+    )
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line_frag.h
+        COMMAND ${GLSLC} -mfmt=c ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line.frag -o ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line_frag.h
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line.frag
+    )
+    set(SHADER_HEADERS
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube_vert.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/cube_frag.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line_vert.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/shaders/line_frag.h
+    )
+endif()
+
 set(SOURCES
     src/main.cpp
     src/camera.cpp
+    src/box.cpp
     src/gizmo.cpp
     src/vulkan_pipeline.cpp
     src/vulkan_renderer.cpp
+    ${SHADER_HEADERS}
     ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
 )
 
