@@ -1,5 +1,6 @@
 #include "vulkan_pipeline.h"
 #include <cstddef>
+#include "math_3d.h"
 #include "shaders/cube_vert.h"
 #include "shaders/cube_frag.h"
 #include "shaders/line_vert.h"
@@ -49,7 +50,6 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
                           VkExtent2D extent, const std::vector<VkImageView>& swapchainImageViews, VkBuffer uboBuffer) {
     depthFormat = findSupportedDepthFormat(physicalDevice);
 
-    // 1. صورة العمق
     VkImageCreateInfo depthImgInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     depthImgInfo.imageType = VK_IMAGE_TYPE_2D;
     depthImgInfo.extent = { extent.width, extent.height, 1 };
@@ -78,7 +78,6 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     dViewInfo.subresourceRange.layerCount = 1;
     vkCreateImageView(device, &dViewInfo, nullptr, &depthImageView);
 
-    // 2. RenderPass
     VkAttachmentDescription attachments[2] = {};
     attachments[0].format = swapchainFormat;
     attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -119,7 +118,6 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     rpci.pDependencies = &dependency;
     vkCreateRenderPass(device, &rpci, nullptr, &renderPass);
 
-    // 3. Framebuffers
     framebuffers.resize(swapchainImageViews.size());
     for (size_t i = 0; i < swapchainImageViews.size(); i++) {
         VkImageView fbViews[] = { swapchainImageViews[i], depthImageView };
@@ -133,7 +131,6 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
         vkCreateFramebuffer(device, &fbci, nullptr, &framebuffers[i]);
     }
 
-    // 4. Descriptors
     VkDescriptorSetLayoutBinding uboBinding{};
     uboBinding.binding = 0;
     uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -158,7 +155,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     dsai.pSetLayouts = &descriptorSetLayout;
     vkAllocateDescriptorSets(device, &dsai, &descriptorSet);
 
-    VkDescriptorBufferInfo dbi{uboBuffer, 0, 144};
+    VkDescriptorBufferInfo dbi{uboBuffer, 0, 80}; // 64 (viewProj) + 16 (camPos)
     VkWriteDescriptorSet wds{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
     wds.dstSet = descriptorSet;
     wds.dstBinding = 0;
@@ -167,10 +164,17 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     wds.pBufferInfo = &dbi;
     vkUpdateDescriptorSets(device, 1, &wds, 0, nullptr);
 
-    // 5. إعداد Pipelines
+    // إضافة Push Constants لمصفوفة Model لمنع تداخل حركة المجسمات مع بعضها
+    VkPushConstantRange pcr{};
+    pcr.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pcr.offset = 0;
+    pcr.size = sizeof(Mat4);
+
     VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
     plci.setLayoutCount = 1;
     plci.pSetLayouts = &descriptorSetLayout;
+    plci.pushConstantRangeCount = 1;
+    plci.pPushConstantRanges = &pcr;
     vkCreatePipelineLayout(device, &plci, nullptr, &pipelineLayout);
 
     VkViewport viewport{ 0.0f, (float)extent.height, (float)extent.width, -(float)extent.height, 0.0f, 1.0f };
@@ -181,7 +185,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     pvsi.scissorCount = 1;
     pvsi.pScissors = &scissor;
 
-    // (أ) بايبلاين المكعب المصمت
+    // (أ) شيدر المكعب المصمت
     VkShaderModule cVs = createShaderModule(device, cube_vert_data, sizeof(cube_vert_data));
     VkShaderModule cFs = createShaderModule(device, cube_frag_data, sizeof(cube_frag_data));
 
@@ -206,7 +210,6 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
 
     VkPipelineRasterizationStateCreateInfo prsi{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     prsi.cullMode = VK_CULL_MODE_BACK_BIT;
-    // التصحيح الحاسم: COUNTER_CLOCKWISE لرسم الأوجه الأمامية وحذف الخلفية فقط
     prsi.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     prsi.lineWidth = 1.0f;
     prsi.depthBiasEnable = VK_TRUE;
@@ -235,7 +238,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     vkDestroyShaderModule(device, cVs, nullptr);
     vkDestroyShaderModule(device, cFs, nullptr);
 
-    // (ب) بايبلاين خطوط شبكة الأرضية وحواف المكعب
+    // (ب) شيدر الخطوط
     VkShaderModule lVs = createShaderModule(device, line_vert_data, sizeof(line_vert_data));
     VkShaderModule lFs = createShaderModule(device, line_frag_data, sizeof(line_frag_data));
 
@@ -282,7 +285,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     lGpci.pColorBlendState = &lpcbsi;
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &lGpci, nullptr, &linePipeline);
 
-    // (ج) بايبلاين الجزمو
+    // (ج) شيدر الجزمو
     VkPipelineInputAssemblyStateCreateInfo gPiasi{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     gPiasi.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
