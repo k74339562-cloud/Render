@@ -3,8 +3,8 @@
 #include <android/native_window.h>
 #include <vector>
 #include "camera.h"
-#include "mesh.h"
 #include "gizmo.h"
+#include "vulkan_pipeline.h"
 
 struct UniformBufferObject {
     Mat4 viewProj;
@@ -20,7 +20,6 @@ public:
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     VkQueue graphicsQueue = VK_NULL_HANDLE;
-    uint32_t queueFamilyIndex = 0;
 
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkFormat swapchainFormat = VK_FORMAT_B8G8R8A8_UNORM;
@@ -28,25 +27,10 @@ public:
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
 
-    VkImage depthImage = VK_NULL_HANDLE;
-    VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
-    VkImageView depthImageView = VK_NULL_HANDLE;
-
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> framebuffers;
-
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline cubePipeline = VK_NULL_HANDLE;
-    VkPipeline linePipeline = VK_NULL_HANDLE;
-    VkPipeline gizmoPipeline = VK_NULL_HANDLE;
+    VulkanPipeline pipeline;
 
     VkCommandPool commandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> commandBuffers;
-
     VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
     VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence inFlightFence = VK_NULL_HANDLE;
@@ -58,6 +42,9 @@ public:
     VkDeviceMemory cubeVboMemory = VK_NULL_HANDLE;
     VkBuffer cubeIbo = VK_NULL_HANDLE;
     VkDeviceMemory cubeIboMemory = VK_NULL_HANDLE;
+
+    VkBuffer cubeEdgesVbo = VK_NULL_HANDLE;
+    VkDeviceMemory cubeEdgesVboMemory = VK_NULL_HANDLE;
 
     VkBuffer gridVbo = VK_NULL_HANDLE;
     VkDeviceMemory gridVboMemory = VK_NULL_HANDLE;
