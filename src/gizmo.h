@@ -9,7 +9,8 @@ struct GizmoVertex {
 
 class Gizmo {
 public:
-    std::vector<GizmoVertex> coneVertices;
+    std::vector<GizmoVertex> lines;
+    std::vector<GizmoVertex> cones;
 
     void init();
 };
