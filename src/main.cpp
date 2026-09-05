@@ -40,17 +40,9 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
         float screenW = (float)s->renderer.engine.swapchainExtent.width;
         float screenH = (float)s->renderer.engine.swapchainExtent.height;
 
-        // ميزة اللمس بـ 3 أصابع معاً للتبديل بين أوضاع بلندر: كائن -> رؤوس -> حواف -> أوجه
-        if (count == 3 && masked == AMOTION_EVENT_ACTION_POINTER_DOWN) {
-            s->renderer.switchSelectionMode();
-            s->state = NAV_IDLE;
-            return 1;
-        }
-
         if (masked == AMOTION_EVENT_ACTION_UP || masked == AMOTION_EVENT_ACTION_CANCEL) {
             if (s->state == NAV_ORBIT || s->state == NAV_IDLE) {
                 float totalDrag = calcDist(s->downX, s->downY, s->lastX, s->lastY);
-                // إذا كان نقراً خفيفاً دون سحب = فحص التحديد أو إلغاء التحديد بالنقر في الفراغ
                 if (totalDrag < 15.0f) {
                     s->renderer.handleTapSelection(s->downX, s->downY, screenW, screenH);
                 }
@@ -68,6 +60,12 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->downX = x; s->downY = y;
                 s->lastX = x; s->lastY = y;
 
+                // 1. فحص لمس أزرار واجهة بلندر العلوية أولاً
+                if (s->renderer.handleUITouch(x, y, screenW, screenH)) {
+                    s->state = NAV_IDLE;
+                    return 1; // استهلاك اللمس للأزرار فقط دون تدوير الكاميرا
+                }
+
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - s->lastTapTime).count();
                 s->lastTapTime = now;
@@ -78,7 +76,7 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                     return 1;
                 }
 
-                // فحص لمس الجزمو إذا كان ظاهراً
+                // 2. فحص لمس الجزمو
                 GizmoAxis hit = s->renderer.testGizmoHit(x, y, screenW, screenH);
                 if (hit != AXIS_NONE) {
                     s->renderer.activeAxis = hit;
