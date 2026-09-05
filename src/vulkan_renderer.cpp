@@ -57,21 +57,54 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     vkEnumeratePhysicalDevices(instance, &devCount, devs.data());
     physicalDevice = devs[0];
 
+    // استعلام Queue Family بدقة
+    uint32_t qFamCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &qFamCount, nullptr);
+    std::vector<VkQueueFamilyProperties> qProps(qFamCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &qFamCount, qProps.data());
+    uint32_t graphicsQueueFamily = 0;
+    for (uint32_t i = 0; i < qFamCount; ++i) {
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
+        if ((qProps[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && presentSupport) {
+            graphicsQueueFamily = i;
+            break;
+        }
+    }
+
     float qp = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-    qci.queueFamilyIndex = 0; qci.queueCount = 1; qci.pQueuePriorities = &qp;
+    qci.queueFamilyIndex = graphicsQueueFamily; qci.queueCount = 1; qci.pQueuePriorities = &qp;
 
     const char* devExt[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci;
     dci.enabledExtensionCount = 1; dci.ppEnabledExtensionNames = devExt;
     if (vkCreateDevice(physicalDevice, &dci, nullptr, &device) != VK_SUCCESS) return false;
-    vkGetDeviceQueue(device, 0, 0, &graphicsQueue);
+    vkGetDeviceQueue(device, graphicsQueueFamily, 0, &graphicsQueue);
+
+    // اختيار صيغة الألوان وحل مشكلة انعكاس الأحمر والأزرق نهائياً
+    uint32_t formatCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
+
+    VkSurfaceFormatKHR chosenFormat = formats[0];
+    for (const auto& f : formats) {
+        if (f.format == VK_FORMAT_R8G8B8A8_UNORM || f.format == VK_FORMAT_R8G8B8A8_SRGB) {
+            chosenFormat = f;
+            break;
+        }
+    }
+    swapchainFormat = chosenFormat.format;
+
+    // توحيد صيغة نافذة أندرويد لتطابق Vulkan 100%
+    ANativeWindow_setBuffersGeometry(window, 0, 0, WINDOW_FORMAT_RGBA_8888);
 
     swapchainExtent = { (uint32_t)ANativeWindow_getWidth(window), (uint32_t)ANativeWindow_getHeight(window) };
     VkSwapchainCreateInfoKHR swci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     swci.surface = surface; swci.minImageCount = 2; swci.imageFormat = swapchainFormat;
-    swci.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR; swci.imageExtent = swapchainExtent;
+    swci.imageColorSpace = chosenFormat.colorSpace; swci.imageExtent = swapchainExtent;
     swci.imageArrayLayers = 1; swci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     swci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; swci.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swci.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR; swci.presentMode = VK_PRESENT_MODE_FIFO_KHR;
@@ -118,37 +151,37 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* iData; vkMapMemory(device, cubeIboMemory, 0, sizeof(cubeIndices), 0, &iData);
     memcpy(iData, cubeIndices, sizeof(cubeIndices)); vkUnmapMemory(device, cubeIboMemory);
 
-    // 2. حواف مكعب بلندر الـ 12 الداكنة (#1C1C1C) لجعله مجسماً وحاداً
+    // 2. حواف مكعب بلندر الـ 12 الداكنة (#1A1A1A)
     VertexLine cubeEdges[] = {
-        {-1,-1,-1, 0.11f,0.11f,0.11f,1}, { 1,-1,-1, 0.11f,0.11f,0.11f,1},
-        { 1,-1,-1, 0.11f,0.11f,0.11f,1}, { 1, 1,-1, 0.11f,0.11f,0.11f,1},
-        { 1, 1,-1, 0.11f,0.11f,0.11f,1}, {-1, 1,-1, 0.11f,0.11f,0.11f,1},
-        {-1, 1,-1, 0.11f,0.11f,0.11f,1}, {-1,-1,-1, 0.11f,0.11f,0.11f,1},
-        {-1,-1, 1, 0.11f,0.11f,0.11f,1}, { 1,-1, 1, 0.11f,0.11f,0.11f,1},
-        { 1,-1, 1, 0.11f,0.11f,0.11f,1}, { 1, 1, 1, 0.11f,0.11f,0.11f,1},
-        { 1, 1, 1, 0.11f,0.11f,0.11f,1}, {-1, 1, 1, 0.11f,0.11f,0.11f,1},
-        {-1, 1, 1, 0.11f,0.11f,0.11f,1}, {-1,-1, 1, 0.11f,0.11f,0.11f,1},
-        {-1,-1,-1, 0.11f,0.11f,0.11f,1}, {-1,-1, 1, 0.11f,0.11f,0.11f,1},
-        { 1,-1,-1, 0.11f,0.11f,0.11f,1}, { 1,-1, 1, 0.11f,0.11f,0.11f,1},
-        { 1, 1,-1, 0.11f,0.11f,0.11f,1}, { 1, 1, 1, 0.11f,0.11f,0.11f,1},
-        {-1, 1,-1, 0.11f,0.11f,0.11f,1}, {-1, 1, 1, 0.11f,0.11f,0.11f,1}
+        {-1,-1,-1, 0.10f,0.10f,0.10f,1}, { 1,-1,-1, 0.10f,0.10f,0.10f,1},
+        { 1,-1,-1, 0.10f,0.10f,0.10f,1}, { 1, 1,-1, 0.10f,0.10f,0.10f,1},
+        { 1, 1,-1, 0.10f,0.10f,0.10f,1}, {-1, 1,-1, 0.10f,0.10f,0.10f,1},
+        {-1, 1,-1, 0.10f,0.10f,0.10f,1}, {-1,-1,-1, 0.10f,0.10f,0.10f,1},
+        {-1,-1, 1, 0.10f,0.10f,0.10f,1}, { 1,-1, 1, 0.10f,0.10f,0.10f,1},
+        { 1,-1, 1, 0.10f,0.10f,0.10f,1}, { 1, 1, 1, 0.10f,0.10f,0.10f,1},
+        { 1, 1, 1, 0.10f,0.10f,0.10f,1}, {-1, 1, 1, 0.10f,0.10f,0.10f,1},
+        {-1, 1, 1, 0.10f,0.10f,0.10f,1}, {-1,-1, 1, 0.10f,0.10f,0.10f,1},
+        {-1,-1,-1, 0.10f,0.10f,0.10f,1}, {-1,-1, 1, 0.10f,0.10f,0.10f,1},
+        { 1,-1,-1, 0.10f,0.10f,0.10f,1}, { 1,-1, 1, 0.10f,0.10f,0.10f,1},
+        { 1, 1,-1, 0.10f,0.10f,0.10f,1}, { 1, 1, 1, 0.10f,0.10f,0.10f,1},
+        {-1, 1,-1, 0.10f,0.10f,0.10f,1}, {-1, 1, 1, 0.10f,0.10f,0.10f,1}
     };
     createBuffer(sizeof(cubeEdges), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, cubeEdgesVbo, cubeEdgesVboMemory);
     void* edgeData; vkMapMemory(device, cubeEdgesVboMemory, 0, sizeof(cubeEdges), 0, &edgeData);
     memcpy(edgeData, cubeEdges, sizeof(cubeEdges)); vkUnmapMemory(device, cubeEdgesVboMemory);
 
-    // 3. شبكة أرضية بلندر على مسطح XY عند Z = -1.0
+    // 3. شبكة أرضية بلندر الرسمية على مسطح XY عند قاعدة المكعب Z = -1.0
     std::vector<VertexLine> gridLines;
-    int gridSize = 14;
+    int gridSize = 16;
     for (int i = -gridSize; i <= gridSize; ++i) {
         float fi = (float)i, fs = (float)gridSize;
-        float r = 0.23f, g = 0.23f, b = 0.23f;
-        if (i == 0) { r = 0.90f; g = 0.22f; b = 0.22f; } // محور X الأحمر
+        float r = 0.24f, g = 0.24f, b = 0.24f;
+        if (i == 0) { r = 0.92f; g = 0.23f; b = 0.32f; } // خط محور X الأحمر
         gridLines.push_back({-fs, fi, -1.0f, r, g, b, 1.0f});
         gridLines.push_back({ fs, fi, -1.0f, r, g, b, 1.0f});
 
-        r = 0.23f; g = 0.23f; b = 0.23f;
-        if (i == 0) { r = 0.26f; g = 0.63f; b = 0.28f; } // محور Y الأخضر
+        r = 0.24f; g = 0.24f; b = 0.24f;
+        if (i == 0) { r = 0.51f; g = 0.78f; b = 0.14f; } // خط محور Y الأخضر
         gridLines.push_back({fi, -fs, -1.0f, r, g, b, 1.0f});
         gridLines.push_back({fi,  fs, -1.0f, r, g, b, 1.0f});
     }
@@ -166,7 +199,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     memcpy(gizmoData, gizmo.vertices.data(), gizmo.vertices.size() * sizeof(GizmoVertex)); vkUnmapMemory(device, gizmoVboMemory);
 
     VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-    cpci.queueFamilyIndex = 0; cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cpci.queueFamilyIndex = graphicsQueueFamily; cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     vkCreateCommandPool(device, &cpci, nullptr, &commandPool);
 
     commandBuffers.resize(imgCount);
@@ -182,7 +215,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     vkCreateFence(device, &fci, nullptr, &inFlightFence);
 
-    LOGI("نجح إقلاع محرك ريندر بلندر AAA المقسم!");
+    LOGI("Blender AAA Renderer Engine Started Successfully!");
     return true;
 }
 
@@ -225,10 +258,12 @@ void VulkanRenderer::renderFrame() {
     if (device == VK_NULL_HANDLE || swapchain == VK_NULL_HANDLE) return;
 
     vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1, &inFlightFence);
 
     uint32_t imageIndex;
-    if (vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex) != VK_SUCCESS) return;
+    VkResult res = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) return;
+
+    vkResetFences(device, 1, &inFlightFence);
 
     if (g_uboMapped) {
         UniformBufferObject ubo{};
@@ -246,9 +281,9 @@ void VulkanRenderer::renderFrame() {
     VkCommandBufferBeginInfo cbbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     vkBeginCommandBuffer(cmd, &cbbi);
 
-    // خلفية استوديو بلندر الرمادية الأصلية (#303030)
+    // خلفية استوديو بلندر الرمادية الأصلية (#353535)
     VkClearValue clearValues[2];
-    clearValues[0].color = {{0.188f, 0.188f, 0.188f, 1.0f}};
+    clearValues[0].color = {{0.208f, 0.208f, 0.208f, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
@@ -261,25 +296,25 @@ void VulkanRenderer::renderFrame() {
 
     VkDeviceSize offsets[] = {0};
 
-    // 1. رسم شبكة أرضية بلندر على مسطح XY
+    // 1. شبكة أرضية بلندر
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gridVbo, offsets);
     vkCmdDraw(cmd, gridVertexCount, 1, 0, 0);
 
-    // 2. رسم المكعب المصمت بشيدر طين بلندر العميق
+    // 2. المكعب المصمت بشيدر بلندر الطيني
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.cubePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &cubeVbo, offsets);
     vkCmdBindIndexBuffer(cmd, cubeIbo, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
 
-    // 3. رسم حواف مكعب بلندر الـ 12 الداكنة لإبراز الزوايا بحدة
+    // 3. حواف مكعب بلندر الـ 12 الداكنة
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindVertexBuffers(cmd, 0, 1, &cubeEdgesVbo, offsets);
     vkCmdDraw(cmd, 24, 1, 0, 0);
 
-    // 4. رسم جزمو بلندر الرسمي Z-Up (الأزرق للأعلى، الأحمر لليمين، الأخضر للأمام)
+    // 4. جزمو المحاور الثلاثية لبلندر
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.gizmoPipeline);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVbo, offsets);
     vkCmdDraw(cmd, gizmoVertexCount, 1, 0, 0);
