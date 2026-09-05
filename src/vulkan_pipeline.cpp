@@ -181,7 +181,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     pvsi.scissorCount = 1;
     pvsi.pScissors = &scissor;
 
-    // (أ) شيدر المكعب
+    // (أ) بايبلاين المكعب المصمت
     VkShaderModule cVs = createShaderModule(device, cube_vert_data, sizeof(cube_vert_data));
     VkShaderModule cFs = createShaderModule(device, cube_frag_data, sizeof(cube_frag_data));
 
@@ -206,12 +206,12 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
 
     VkPipelineRasterizationStateCreateInfo prsi{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     prsi.cullMode = VK_CULL_MODE_BACK_BIT;
-    // تصحيح Winding Order: لأن الـ Viewport سالب، الأوجه الخارجية تصبح CLOCKWISE
-    prsi.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    // التصحيح الحاسم: COUNTER_CLOCKWISE لرسم الأوجه الأمامية وحذف الخلفية فقط
+    prsi.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     prsi.lineWidth = 1.0f;
     prsi.depthBiasEnable = VK_TRUE;
-    prsi.depthBiasConstantFactor = 2.0f;
-    prsi.depthBiasSlopeFactor = 2.0f;
+    prsi.depthBiasConstantFactor = 1.5f;
+    prsi.depthBiasSlopeFactor = 1.5f;
 
     VkPipelineMultisampleStateCreateInfo pmssi{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     pmssi.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -235,7 +235,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     vkDestroyShaderModule(device, cVs, nullptr);
     vkDestroyShaderModule(device, cFs, nullptr);
 
-    // (ب) شيدر خطوط شبكة الأرضية وحواف المكعب مع تفعيل الدمج والشفافية (Alpha Blending)
+    // (ب) بايبلاين خطوط شبكة الأرضية وحواف المكعب
     VkShaderModule lVs = createShaderModule(device, line_vert_data, sizeof(line_vert_data));
     VkShaderModule lFs = createShaderModule(device, line_frag_data, sizeof(line_frag_data));
 
@@ -263,7 +263,6 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     lPrsi.cullMode = VK_CULL_MODE_NONE;
     lPrsi.lineWidth = 1.0f;
 
-    // تفعيل Alpha Blending للخطوط لتتلاشى بانسيابية فائقة
     VkPipelineColorBlendAttachmentState lbas{};
     lbas.colorWriteMask = 0xF;
     lbas.blendEnable = VK_TRUE;
@@ -283,7 +282,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     lGpci.pColorBlendState = &lpcbsi;
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &lGpci, nullptr, &linePipeline);
 
-    // (ج) شيدر الجزمو
+    // (ج) بايبلاين الجزمو
     VkPipelineInputAssemblyStateCreateInfo gPiasi{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     gPiasi.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
