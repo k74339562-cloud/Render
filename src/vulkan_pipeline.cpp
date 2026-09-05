@@ -49,7 +49,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
                           VkExtent2D extent, const std::vector<VkImageView>& swapchainImageViews, VkBuffer uboBuffer) {
     depthFormat = findSupportedDepthFormat(physicalDevice);
 
-    // 1. إنشاء صورة العمق بصيغة مدعومة 100% من عتاد الهاتف
+    // 1. صورة العمق
     VkImageCreateInfo depthImgInfo{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     depthImgInfo.imageType = VK_IMAGE_TYPE_2D;
     depthImgInfo.extent = { extent.width, extent.height, 1 };
@@ -78,7 +78,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     dViewInfo.subresourceRange.layerCount = 1;
     vkCreateImageView(device, &dViewInfo, nullptr, &depthImageView);
 
-    // 2. إنشاء RenderPass
+    // 2. RenderPass
     VkAttachmentDescription attachments[2] = {};
     attachments[0].format = swapchainFormat;
     attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -119,7 +119,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     rpci.pDependencies = &dependency;
     vkCreateRenderPass(device, &rpci, nullptr, &renderPass);
 
-    // 3. إنشاء Framebuffers
+    // 3. Framebuffers
     framebuffers.resize(swapchainImageViews.size());
     for (size_t i = 0; i < swapchainImageViews.size(); i++) {
         VkImageView fbViews[] = { swapchainImageViews[i], depthImageView };
@@ -133,7 +133,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
         vkCreateFramebuffer(device, &fbci, nullptr, &framebuffers[i]);
     }
 
-    // 4. Descriptor Set
+    // 4. Descriptors
     VkDescriptorSetLayoutBinding uboBinding{};
     uboBinding.binding = 0;
     uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -206,12 +206,12 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
 
     VkPipelineRasterizationStateCreateInfo prsi{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     prsi.cullMode = VK_CULL_MODE_BACK_BIT;
-    prsi.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    // تصحيح Winding Order: لأن الـ Viewport سالب، الأوجه الخارجية تصبح CLOCKWISE
+    prsi.frontFace = VK_FRONT_FACE_CLOCKWISE;
     prsi.lineWidth = 1.0f;
-    // تفعيل إزاحة العمق لمنع وميض خطوط الحواف
     prsi.depthBiasEnable = VK_TRUE;
-    prsi.depthBiasConstantFactor = 1.25f;
-    prsi.depthBiasSlopeFactor = 1.75f;
+    prsi.depthBiasConstantFactor = 2.0f;
+    prsi.depthBiasSlopeFactor = 2.0f;
 
     VkPipelineMultisampleStateCreateInfo pmssi{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     pmssi.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -235,7 +235,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     vkDestroyShaderModule(device, cVs, nullptr);
     vkDestroyShaderModule(device, cFs, nullptr);
 
-    // (ب) شيدر خطوط شبكة الأرضية وحواف المكعب
+    // (ب) شيدر خطوط شبكة الأرضية وحواف المكعب مع تفعيل الدمج والشفافية (Alpha Blending)
     VkShaderModule lVs = createShaderModule(device, line_vert_data, sizeof(line_vert_data));
     VkShaderModule lFs = createShaderModule(device, line_frag_data, sizeof(line_frag_data));
 
@@ -261,11 +261,26 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     VkPipelineRasterizationStateCreateInfo lPrsi = prsi;
     lPrsi.depthBiasEnable = VK_FALSE;
     lPrsi.cullMode = VK_CULL_MODE_NONE;
-    lPrsi.lineWidth = 1.8f;
+    lPrsi.lineWidth = 1.0f;
+
+    // تفعيل Alpha Blending للخطوط لتتلاشى بانسيابية فائقة
+    VkPipelineColorBlendAttachmentState lbas{};
+    lbas.colorWriteMask = 0xF;
+    lbas.blendEnable = VK_TRUE;
+    lbas.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    lbas.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    lbas.colorBlendOp = VK_BLEND_OP_ADD;
+    lbas.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    lbas.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    lbas.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo lpcbsi{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    lpcbsi.attachmentCount = 1; lpcbsi.pAttachments = &lbas;
 
     VkGraphicsPipelineCreateInfo lGpci = cGpci;
     lGpci.pStages = lStages; lGpci.pVertexInputState = &lPvisi;
     lGpci.pInputAssemblyState = &lPiasi; lGpci.pRasterizationState = &lPrsi;
+    lGpci.pColorBlendState = &lpcbsi;
     vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &lGpci, nullptr, &linePipeline);
 
     // (ج) شيدر الجزمو
@@ -275,7 +290,7 @@ bool VulkanPipeline::init(VkDevice device, VkPhysicalDevice physicalDevice, VkFo
     VkPipelineDepthStencilStateCreateInfo gPdssi = pdssi;
     gPdssi.depthTestEnable = VK_TRUE;
     gPdssi.depthWriteEnable = VK_TRUE;
-    gPdssi.depthCompareOp = VK_COMPARE_OP_ALWAYS; // يظهر الجزمو بوضوح دون أن يخفيه المكعب
+    gPdssi.depthCompareOp = VK_COMPARE_OP_ALWAYS;
 
     VkGraphicsPipelineCreateInfo gGpci = lGpci;
     gGpci.pInputAssemblyState = &gPiasi; gGpci.pDepthStencilState = &gPdssi;
