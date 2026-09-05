@@ -8,6 +8,7 @@ public:
     VkImage depthImage = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
     VkImageView depthImageView = VK_NULL_HANDLE;
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     std::vector<VkFramebuffer> framebuffers;
 
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
@@ -25,4 +26,5 @@ public:
 
 private:
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    VkFormat findSupportedDepthFormat(VkPhysicalDevice physicalDevice);
 };
