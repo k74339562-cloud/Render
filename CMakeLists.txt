@@ -47,6 +47,7 @@ set(SOURCES
     src/camera.cpp
     src/box.cpp
     src/gizmo.cpp
+    src/render_engine.cpp
     src/vulkan_pipeline.cpp
     src/vulkan_renderer.cpp
     ${SHADER_HEADERS}
