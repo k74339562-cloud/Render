@@ -22,6 +22,17 @@ static float calcDist(float x1, float y1, float x2, float y2) {
 
 static int32_t onInput(struct android_app* app, AInputEvent* event) {
     auto* s = (AppState*)app->userData;
+
+    // 1. منع الخروج بزر الرجوع (Back Button Lock)
+    if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_KEY) {
+        int32_t keyCode = AKeyEvent_getKeyCode(event);
+        if (keyCode == AKEYCODE_BACK) {
+            // اعتراض الحدث واستهلاكه؛ لا يمكن الخروج إلا بحذف التطبيق من الخلفية
+            return 1;
+        }
+    }
+
+    // 2. التحكم في الإيماءات واللمس الحر
     if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
         int action = AMotionEvent_getAction(event);
         int masked = action & AMOTION_EVENT_ACTION_MASK;
@@ -32,6 +43,7 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
             return 1;
         }
 
+        // حركة بإصبع واحد: دوران حر سلس (Free Orbit)
         if (count == 1) {
             float x = AMotionEvent_getX(event, 0);
             float y = AMotionEvent_getY(event, 0);
@@ -47,7 +59,9 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->lastX = x; s->lastY = y;
                 return 1;
             }
-        } else if (count >= 2) {
+        } 
+        // حركة بإصبعين: تحريك متوازن (Pan) + تقريب سلس (Zoom)
+        else if (count >= 2) {
             float x0 = AMotionEvent_getX(event, 0), y0 = AMotionEvent_getY(event, 0);
             float x1 = AMotionEvent_getX(event, 1), y1 = AMotionEvent_getY(event, 1);
             float dist = calcDist(x0, y0, x1, y1);
@@ -59,17 +73,18 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->state = NAV_ZOOM_PAN;
                 return 1;
             } else if (masked == AMOTION_EVENT_ACTION_MOVE && s->state == NAV_ZOOM_PAN) {
+                // تقريب
                 float deltaDist = dist - s->lastDist;
                 s->renderer.camera.onZoom(deltaDist);
                 s->lastDist = dist;
 
+                // تحريك في مستوى الكاميرا (Pan)
                 float dMidX = midX - s->lastMidX;
                 float dMidY = midY - s->lastMidY;
                 s->renderer.camera.onPan(dMidX, dMidY);
                 s->lastMidX = midX; s->lastMidY = midY;
                 return 1;
             } else if (masked == AMOTION_EVENT_ACTION_POINTER_UP) {
-                // منع قفزة الشاشة عند رفع أحد الأصابع
                 int upIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
                 int remainingIndex = (upIndex == 0) ? 1 : 0;
                 s->lastX = AMotionEvent_getX(event, remainingIndex);
