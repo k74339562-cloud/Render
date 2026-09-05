@@ -2,42 +2,53 @@
 #include <cmath>
 #include <algorithm>
 
-void Camera::onOrbit(float dx, float dy) {
-    yaw += dx * 0.005f;
-    pitch = std::clamp(pitch + dy * 0.005f, -1.55f, 1.55f);
+Vec3 Camera::getForward() const {
+    // متجه النظر الحر بنظام Z-Up
+    return Vec3(
+        std::cos(pitch) * std::sin(yaw),
+        std::cos(pitch) * std::cos(yaw),
+        std::sin(pitch)
+    ).normalize();
 }
 
-void Camera::onZoom(float delta) {
-    dist = std::clamp(dist * (1.0f - delta * 0.004f), 0.8f, 120.0f);
+Vec3 Camera::getRight() const {
+    float cosY = std::cos(yaw), sinY = std::sin(yaw);
+    return Vec3(-cosY, sinY, 0.0f).normalize();
+}
+
+Vec3 Camera::getUp() const {
+    return getRight().cross(getForward()).normalize();
+}
+
+void Camera::onLook(float dx, float dy) {
+    // دوران حر تماماً في مكان الكاميرا دون أي نقطة ارتكاز
+    yaw += dx * 0.004f;
+    pitch = std::clamp(pitch + dy * 0.004f, -1.52f, 1.52f);
 }
 
 void Camera::onPan(float dx, float dy) {
-    float cosY = std::cos(yaw), sinY = std::sin(yaw);
-    Vec3 camRight = {-cosY, sinY, 0.0f};
-    Vec3 camUp = {-sinY * std::sin(pitch), -cosY * std::sin(pitch), std::cos(pitch)};
-
-    float factor = dist * 0.00085f;
-    Vec3 deltaMove = (camRight * (-dx * factor)) + (camUp * (dy * factor));
-    ofs = ofs + deltaMove;
+    // تحريك حر في مستوي الرؤية
+    Vec3 right = getRight();
+    Vec3 up = getUp();
+    float speed = 0.008f;
+    pos = pos + (right * (-dx * speed)) + (up * (dy * speed));
 }
 
-Vec3 Camera::getPosition() const {
-    return ofs + Vec3(
-        dist * std::cos(pitch) * std::sin(yaw),
-        dist * std::cos(pitch) * std::cos(yaw),
-        dist * std::sin(pitch)
-    );
+void Camera::onFly(float delta) {
+    // طيران للأمام والخلف بنعومة
+    Vec3 fwd = getForward();
+    float speed = 0.025f;
+    pos = pos + (fwd * (delta * speed));
 }
 
 Mat4 Camera::getViewMatrix() const {
-    Vec3 eye = getPosition();
-    return Mat4::lookAt(eye, ofs, Vec3(0.0f, 0.0f, 1.0f));
+    return Mat4::lookAt(pos, pos + getForward(), Vec3(0.0f, 0.0f, 1.0f));
 }
 
 Mat4 Camera::getProjectionMatrix(float width, float height) const {
     float aspect = (height > 0.0f) ? (width / height) : 1.0f;
-    float fovRad = 45.0f * (3.14159265f / 180.0f);
-    float nearZ = 0.1f, farZ = 250.0f;
+    float fovRad = 50.0f * (3.14159265f / 180.0f);
+    float nearZ = 0.1f, farZ = 300.0f;
 
     Mat4 r;
     float tanHalf = std::tan(fovRad * 0.5f);
@@ -49,18 +60,11 @@ Mat4 Camera::getProjectionMatrix(float width, float height) const {
     return r;
 }
 
-Ray Camera::getScreenRay(float touchX, float touchY, float screenW, float screenH) const {
-    // تحويل إحداثيات اللمس إلى مساحة NDC بنظام Vulkan
-    float ndcX = (2.0f * touchX) / screenW - 1.0f;
-    float ndcY = 1.0f - (2.0f * touchY) / screenH; // مراعاة Viewport السالب
+Vec2 Camera::projectToScreen(const Vec3& worldPos, float screenW, float screenH) const {
+    Mat4 vp = getProjectionMatrix(screenW, screenH) * getViewMatrix();
+    Vec3 ndc = vp.transformPoint(worldPos);
 
-    Mat4 invVP = (getProjectionMatrix(screenW, screenH) * getViewMatrix()).inverse();
-
-    Vec3 pNear = invVP.transformPoint(Vec3(ndcX, ndcY, 0.0f));
-    Vec3 pFar  = invVP.transformPoint(Vec3(ndcX, ndcY, 1.0f));
-
-    Ray ray;
-    ray.origin = pNear;
-    ray.dir = (pFar - pNear).normalize();
-    return ray;
+    float px = (ndc.x + 1.0f) * 0.5f * screenW;
+    float py = (1.0f - ndc.y) * 0.5f * screenH;
+    return {px, py};
 }
