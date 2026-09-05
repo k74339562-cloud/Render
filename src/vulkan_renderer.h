@@ -11,7 +11,8 @@ enum GizmoAxis {
     AXIS_NONE = 0,
     AXIS_X,
     AXIS_Y,
-    AXIS_Z
+    AXIS_Z,
+    AXIS_CENTER // إضافة محور المركز الحر (View-Plane Translation)
 };
 
 struct UniformBufferObject {
@@ -57,7 +58,7 @@ public:
 
     Camera camera;
     Gizmo gizmo;
-    Box box; // المكعب المستقل
+    Box box;
 
     GizmoAxis activeAxis = AXIS_NONE;
 
@@ -65,6 +66,7 @@ public:
     void cleanup();
     void renderFrame();
 
+    // فحص وسحب الجزمو (بما فيه المركز الحر)
     GizmoAxis testGizmoHit(float touchX, float touchY, float screenW, float screenH);
     void dragGizmo(float dx, float dy, float screenW, float screenH);
 
