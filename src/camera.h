@@ -7,20 +7,19 @@ struct Vec2 {
 
 class Camera {
 public:
-    Vec3 pos = {5.0f, 5.0f, 4.0f}; // موقع الكاميرا الحر في العالم
-    float yaw = -2.356f;            // النظر نحو نقطة الأصل
-    float pitch = -0.45f;           // زاوية النظر لأسفل قليلاً
+    Vec3 target = {0.0f, 0.0f, 0.0f}; // مركز الدوران والارتكاز
+    float dist = 7.0f;                 // المسافة عن الهدف
+    float yaw = -0.785f;               // زاوية بلندر الكلاسيكية
+    float pitch = 0.523f;              // زاوية الارتفاع
 
-    void onLook(float dx, float dy);
+    void onOrbit(float dx, float dy);
+    void onZoom(float ratio);
     void onPan(float dx, float dy);
-    void onFly(float delta);
-
-    Vec3 getForward() const;
-    Vec3 getRight() const;
-    Vec3 getUp() const;
+    void focusOn(const Vec3& point);
 
     Mat4 getViewMatrix() const;
     Mat4 getProjectionMatrix(float width, float height) const;
+    Vec3 getPosition() const;
 
     Vec2 projectToScreen(const Vec3& worldPos, float screenW, float screenH) const;
 };
