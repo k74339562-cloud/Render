@@ -60,14 +60,14 @@ static float distToScreenSegment(float tx, float ty, const Vec2& p0, const Vec2&
 GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW, float screenH) {
     Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
 
-    // 1. فحص لمس مركز الجزمو أولاً (نصف قطر 38 بكسل مريح للإبهام)
+    // فحص لمس مركز الجزمو
     float distCenter = std::sqrt((touchX - pCenter.x) * (touchX - pCenter.x) + 
                                  (touchY - pCenter.y) * (touchY - pCenter.y));
-    if (distCenter < 38.0f) {
+    if (distCenter < 45.0f) {
         return AXIS_CENTER;
     }
 
-    // 2. فحص لمس الأسهم الثلاثة X, Y, Z
+    // فحص لمس الأسهم الثلاثة X, Y, Z
     float shaftLen = 1.8f;
     Vec2 pX = camera.projectToScreen(box.position + Vec3(shaftLen, 0, 0), screenW, screenH);
     Vec2 pY = camera.projectToScreen(box.position + Vec3(0, shaftLen, 0), screenW, screenH);
@@ -91,24 +91,31 @@ GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW
 void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH) {
     if (activeAxis == AXIS_NONE) return;
 
+    // حساب المسافة الدقيقة بين عين الكاميرا وموقع المكعب
     float camDist = (camera.getPosition() - box.position).length();
-    float worldUnitsPerPixel = (camDist * 0.0015f);
 
-    // التحريك الحر عند لمس مركز الجزمو (متطابق 100% مع حركة الإصبع دون أي انعكاس)
+    // المعادلة البصرية الدقيقة 100%: تطابق حركة المكعب مع إصبعك بالمليمتر
+    float fovRad = 45.0f * (3.14159265f / 180.0f);
+    float tanHalf = std::tan(fovRad * 0.5f);
+    float worldUnitsPerPixel = (2.0f * camDist * tanHalf) / screenH;
+
+    // 1. التحريك الحر عند لمس مركز الجزمو (ملتصق بالإصبع 1:1)
     if (activeAxis == AXIS_CENTER) {
         float cosY = std::cos(camera.yaw), sinY = std::sin(camera.yaw);
         Vec3 camRight = {-cosY, sinY, 0.0f};
         Vec3 camUp = {-sinY * std::sin(camera.pitch), -cosY * std::sin(camera.pitch), std::cos(camera.pitch)};
 
-        // dx لليمين واليسار (+dx) | dy للأعلى والأسفل (-dy لأن نظام الشاشات يعتبر النزول موجباً)
         Vec3 deltaMove = (camRight * (dx * worldUnitsPerPixel)) + 
                          (camUp * (-dy * worldUnitsPerPixel));
 
         box.position = box.position + deltaMove;
+        
+        // مزامنة ارتكاز الكاميرا مع المكعب
+        camera.target = box.position;
         return;
     }
 
-    // التحريك المقيد عند لمس أحد الأسهم الثلاثة
+    // 2. التحريك المقيد عند لمس أحد الأسهم X, Y, Z
     Vec3 axisDir3D = {0, 0, 0};
     if (activeAxis == AXIS_X) axisDir3D = {1.0f, 0.0f, 0.0f};
     if (activeAxis == AXIS_Y) axisDir3D = {0.0f, 1.0f, 0.0f};
@@ -127,6 +134,9 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
 
     float dotMove = (dx * screenDirX) + (dy * screenDirY);
     box.position = box.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
+    
+    // مزامنة ارتكاز الكاميرا
+    camera.target = box.position;
 }
 
 bool VulkanRenderer::init(ANativeWindow* window) {
@@ -270,7 +280,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     fci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     vkCreateFence(device, &fci, nullptr, &inFlightFence);
 
-    LOGI("AAA Engine Ready!");
+    LOGI("Exact Optical Pinning Engine Ready!");
     return true;
 }
 
@@ -357,7 +367,7 @@ void VulkanRenderer::renderFrame() {
     vkCmdBindVertexBuffers(cmd, 0, 1, &gridVbo, offsets);
     vkCmdDraw(cmd, gridVertexCount, 1, 0, 0);
 
-    // 2. رسم المكعب المستقل
+    // 2. رسم المكعب المستقل بموقعه الجديد
     Mat4 boxModel = box.getModelMatrix();
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.cubePipeline);
@@ -369,7 +379,7 @@ void VulkanRenderer::renderFrame() {
     vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
     box.renderEdges(cmd);
 
-    // 3. رسم الجزمو
+    // 3. رسم الجزمو بموقع المكعب
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.gizmoPipeline);
     vkCmdPushConstants(cmd, pipeline.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &boxModel);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVbo, offsets);
