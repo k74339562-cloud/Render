@@ -25,12 +25,14 @@ static float distToScreenSegment(float tx, float ty, const Vec2& p0, const Vec2&
 GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW, float screenH) {
     Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
 
+    // 1. فحص لمس مركز الجزمو
     float distCenter = std::sqrt((touchX - pCenter.x) * (touchX - pCenter.x) + 
                                  (touchY - pCenter.y) * (touchY - pCenter.y));
     if (distCenter < 38.0f) {
         return AXIS_CENTER;
     }
 
+    // 2. فحص لمس الأسهم X, Y, Z
     float shaftLen = 1.8f;
     Vec2 pX = camera.projectToScreen(box.position + Vec3(shaftLen, 0, 0), screenW, screenH);
     Vec2 pY = camera.projectToScreen(box.position + Vec3(0, shaftLen, 0), screenW, screenH);
@@ -57,6 +59,7 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
     float camDist = (camera.getPosition() - box.position).length();
     float worldUnitsPerPixel = (camDist * 0.0015f);
 
+    // تحريك حر عند لمس المركز
     if (activeAxis == AXIS_CENTER) {
         float cosY = std::cos(camera.yaw), sinY = std::sin(camera.yaw);
         Vec3 camRight = {-cosY, sinY, 0.0f};
@@ -69,6 +72,7 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
         return;
     }
 
+    // تحريك مقيد على أحد الأسهم الثلاثة
     Vec3 axisDir3D = {0, 0, 0};
     if (activeAxis == AXIS_X) axisDir3D = {1.0f, 0.0f, 0.0f};
     if (activeAxis == AXIS_Y) axisDir3D = {0.0f, 1.0f, 0.0f};
@@ -92,10 +96,8 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
 bool VulkanRenderer::init(ANativeWindow* window) {
     if (!engine.init(window)) return false;
 
-    // تهيئة المكعب عبر مكتبة الرندر
     box.init(engine);
 
-    // شبكة الأرضية
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -127,7 +129,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(engine.device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(engine.device, gridVboMemory);
 
-    // تهيئة الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     engine.createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
@@ -153,18 +154,16 @@ void VulkanRenderer::renderFrame() {
     Mat4 p = camera.getProjectionMatrix(screenW, screenH);
     Vec3 eye = camera.getPosition();
 
-    // 1. فتح الفريم
     if (!engine.beginFrame(v, p, eye)) return;
 
-    // 2. رسم شبكة الأرضية الثابتة
+    // 1. رسم شبكة الأرضية
     engine.drawLines(gridVbo, gridVertexCount, Mat4::identity());
 
-    // 3. رسم المكعب المستقل مع حوافه البرتقالية
+    // 2. رسم المكعب وحوافه
     box.draw(engine);
 
-    // 4. رسم الجزمو المتحرك مع المكعب
+    // 3. رسم الجزمو
     engine.drawGizmo(gizmoVbo, gizmoVertexCount, box.getModelMatrix());
 
-    // 5. إنهاء الفريم وإرساله للشاشة
     engine.endFrame();
 }
