@@ -16,7 +16,7 @@ enum GizmoAxis {
 
 class VulkanRenderer {
 public:
-    RenderEngine engine; // المحرك المستقل المنفصل بالكامل
+    RenderEngine engine; // مكتبة الرندر المنفصلة
     Camera camera;
     Gizmo gizmo;
     Box box;
@@ -37,4 +37,8 @@ public:
 
     GizmoAxis testGizmoHit(float touchX, float touchY, float screenW, float screenH);
     void dragGizmo(float dx, float dy, float screenW, float screenH);
+
+    // دوال مساعدة لطلب أبعاد الشاشة دون فتح أحشاء المكتبة
+    uint32_t getWidth() const { return engine.swapchainExtent.width; }
+    uint32_t getHeight() const { return engine.swapchainExtent.height; }
 };
