@@ -3,10 +3,10 @@
 
 class Camera {
 public:
-    Vec3 ofs = {0.0f, 0.0f, 0.0f}; // نقطة ارتكاز المكعب (Target)
-    float dist = 6.0f;              // المسافة (Distance)
-    float yaw = 0.785f;             // زاوية الدوران الأفقية
-    float pitch = 0.523f;           // زاوية الدوران الرأسية
+    Vec3 ofs = {0.0f, 0.0f, 0.0f}; // نقطة ارتكاز الدوران (Target)
+    float dist = 7.5f;              // المسافة الابتدائية
+    float yaw = 0.785f;             // زاوية الدوران الأفقية (45 درجة)
+    float pitch = 0.523f;           // زاوية الدوران الرأسية (30 درجة)
 
     void onOrbit(float dx, float dy);
     void onZoom(float delta);
