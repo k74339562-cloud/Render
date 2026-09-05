@@ -3,7 +3,7 @@
 #include <vector>
 #include "camera.h"
 #include "gizmo.h"
-#include "box.h"
+#include "mesh_data.h"
 #include "render_engine.h"
 
 enum GizmoAxis {
@@ -16,10 +16,10 @@ enum GizmoAxis {
 
 class VulkanRenderer {
 public:
-    RenderEngine engine; // مكتبة الرندر المنفصلة
+    RenderEngine engine;
     Camera camera;
     Gizmo gizmo;
-    Box box;
+    MeshData mesh; // مجسم بلندر الحر القابل للتعديل والتحديد
 
     VkBuffer gridVbo = VK_NULL_HANDLE;
     VkDeviceMemory gridVboMemory = VK_NULL_HANDLE;
@@ -30,6 +30,7 @@ public:
     uint32_t gizmoVertexCount = 0;
 
     GizmoAxis activeAxis = AXIS_NONE;
+    bool isGizmoVisible = true; // إخفاء الجزمو عند النقر في الفراغ
 
     bool init(ANativeWindow* window);
     void cleanup();
@@ -38,7 +39,6 @@ public:
     GizmoAxis testGizmoHit(float touchX, float touchY, float screenW, float screenH);
     void dragGizmo(float dx, float dy, float screenW, float screenH);
 
-    // دوال مساعدة لطلب أبعاد الشاشة دون فتح أحشاء المكتبة
-    uint32_t getWidth() const { return engine.swapchainExtent.width; }
-    uint32_t getHeight() const { return engine.swapchainExtent.height; }
+    void switchSelectionMode(); // التبديل بين أوضاع بلندر (كائن -> نقاط -> حواف -> أوجه)
+    void handleTapSelection(float touchX, float touchY, float screenW, float screenH);
 };
