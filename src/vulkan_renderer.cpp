@@ -23,20 +23,26 @@ static float distToScreenSegment(float tx, float ty, const Vec2& p0, const Vec2&
 }
 
 GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW, float screenH) {
-    Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
+    if (!isGizmoVisible) return AXIS_NONE;
 
-    // 1. فحص لمس مركز الجزمو
+    Vec3 gPos = mesh.getActiveGizmoPosition();
+    Mat4 gOrient = mesh.getActiveGizmoOrientation();
+    Vec3 dirX = Vec3(gOrient.m[0], gOrient.m[1], gOrient.m[2]);
+    Vec3 dirY = Vec3(gOrient.m[4], gOrient.m[5], gOrient.m[6]);
+    Vec3 dirZ = Vec3(gOrient.m[8], gOrient.m[9], gOrient.m[10]);
+
+    Vec2 pCenter = camera.projectToScreen(gPos, screenW, screenH);
+
     float distCenter = std::sqrt((touchX - pCenter.x) * (touchX - pCenter.x) + 
                                  (touchY - pCenter.y) * (touchY - pCenter.y));
     if (distCenter < 38.0f) {
         return AXIS_CENTER;
     }
 
-    // 2. فحص لمس الأسهم X, Y, Z
     float shaftLen = 1.8f;
-    Vec2 pX = camera.projectToScreen(box.position + Vec3(shaftLen, 0, 0), screenW, screenH);
-    Vec2 pY = camera.projectToScreen(box.position + Vec3(0, shaftLen, 0), screenW, screenH);
-    Vec2 pZ = camera.projectToScreen(box.position + Vec3(0, 0, shaftLen), screenW, screenH);
+    Vec2 pX = camera.projectToScreen(gPos + dirX * shaftLen, screenW, screenH);
+    Vec2 pY = camera.projectToScreen(gPos + dirY * shaftLen, screenW, screenH);
+    Vec2 pZ = camera.projectToScreen(gPos + dirZ * shaftLen, screenW, screenH);
 
     float dX = distToScreenSegment(touchX, touchY, pCenter, pX);
     float dY = distToScreenSegment(touchX, touchY, pCenter, pY);
@@ -54,12 +60,13 @@ GizmoAxis VulkanRenderer::testGizmoHit(float touchX, float touchY, float screenW
 }
 
 void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH) {
-    if (activeAxis == AXIS_NONE) return;
+    if (activeAxis == AXIS_NONE || !isGizmoVisible) return;
 
-    float camDist = (camera.getPosition() - box.position).length();
+    Vec3 gPos = mesh.getActiveGizmoPosition();
+    Mat4 gOrient = mesh.getActiveGizmoOrientation();
+    float camDist = (camera.getPosition() - gPos).length();
     float worldUnitsPerPixel = (camDist * 0.0015f);
 
-    // تحريك حر عند لمس المركز
     if (activeAxis == AXIS_CENTER) {
         float cosY = std::cos(camera.yaw), sinY = std::sin(camera.yaw);
         Vec3 camRight = {-cosY, sinY, 0.0f};
@@ -68,18 +75,17 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
         Vec3 deltaMove = (camRight * (dx * worldUnitsPerPixel)) + 
                          (camUp * (-dy * worldUnitsPerPixel));
 
-        box.position = box.position + deltaMove;
+        mesh.position = mesh.position + deltaMove;
         return;
     }
 
-    // تحريك مقيد على أحد الأسهم الثلاثة
     Vec3 axisDir3D = {0, 0, 0};
-    if (activeAxis == AXIS_X) axisDir3D = {1.0f, 0.0f, 0.0f};
-    if (activeAxis == AXIS_Y) axisDir3D = {0.0f, 1.0f, 0.0f};
-    if (activeAxis == AXIS_Z) axisDir3D = {0.0f, 0.0f, 1.0f};
+    if (activeAxis == AXIS_X) axisDir3D = Vec3(gOrient.m[0], gOrient.m[1], gOrient.m[2]);
+    if (activeAxis == AXIS_Y) axisDir3D = Vec3(gOrient.m[4], gOrient.m[5], gOrient.m[6]);
+    if (activeAxis == AXIS_Z) axisDir3D = Vec3(gOrient.m[8], gOrient.m[9], gOrient.m[10]);
 
-    Vec2 pCenter = camera.projectToScreen(box.position, screenW, screenH);
-    Vec2 pTip    = camera.projectToScreen(box.position + axisDir3D, screenW, screenH);
+    Vec2 pCenter = camera.projectToScreen(gPos, screenW, screenH);
+    Vec2 pTip    = camera.projectToScreen(gPos + axisDir3D, screenW, screenH);
 
     float screenDirX = pTip.x - pCenter.x;
     float screenDirY = pTip.y - pCenter.y;
@@ -90,14 +96,70 @@ void VulkanRenderer::dragGizmo(float dx, float dy, float screenW, float screenH)
     screenDirY /= len;
 
     float dotMove = (dx * screenDirX) + (dy * screenDirY);
-    box.position = box.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
+    mesh.position = mesh.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
+}
+
+void VulkanRenderer::switchSelectionMode() {
+    int nextMode = ((int)mesh.selectMode + 1) % 4;
+    mesh.selectMode = (SelectionMode)nextMode;
+    mesh.deselectAll();
+    mesh.isObjectSelected = (mesh.selectMode == SelectionMode::OBJECT);
+    isGizmoVisible = mesh.isObjectSelected;
+    mesh.rebuildBuffers(engine);
+}
+
+void VulkanRenderer::handleTapSelection(float touchX, float touchY, float screenW, float screenH) {
+    Ray ray = camera.getScreenRay(touchX, touchY, screenW, screenH);
+    float dist = 0.0f;
+
+    // 1. فحص النقر في الفراغ لإلغاء التحديد وإخفاء الجزمو
+    if (mesh.selectMode == SelectionMode::OBJECT) {
+        if (mesh.pickObject(ray, dist)) {
+            mesh.isObjectSelected = true;
+            isGizmoVisible = true;
+        } else {
+            // النقر في الفراغ = إخفاء الجزمو وإلغاء التحديد
+            mesh.deselectAll();
+            isGizmoVisible = false;
+        }
+    } else if (mesh.selectMode == SelectionMode::FACE) {
+        int fIdx = mesh.pickFace(ray, dist);
+        if (fIdx != -1) {
+            mesh.selectedFaceIdx = fIdx;
+            isGizmoVisible = true;
+        } else {
+            mesh.deselectAll();
+            isGizmoVisible = false;
+        }
+    } else if (mesh.selectMode == SelectionMode::EDGE) {
+        int eIdx = mesh.pickEdge(ray, 0.25f);
+        if (eIdx != -1) {
+            mesh.selectedEdgeIdx = eIdx;
+            isGizmoVisible = true;
+        } else {
+            mesh.deselectAll();
+            isGizmoVisible = false;
+        }
+    } else if (mesh.selectMode == SelectionMode::VERTEX) {
+        int vIdx = mesh.pickVertex(ray, 0.25f);
+        if (vIdx != -1) {
+            mesh.selectedVertexIdx = vIdx;
+            isGizmoVisible = true;
+        } else {
+            mesh.deselectAll();
+            isGizmoVisible = false;
+        }
+    }
+
+    mesh.rebuildBuffers(engine);
 }
 
 bool VulkanRenderer::init(ANativeWindow* window) {
     if (!engine.init(window)) return false;
 
-    box.init(engine);
+    mesh.initDefaultCube(engine);
 
+    // شبكة الأرضية
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -129,6 +191,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* gLineData; vkMapMemory(engine.device, gridVboMemory, 0, gridLines.size() * sizeof(VertexLine), 0, &gLineData);
     memcpy(gLineData, gridLines.data(), gridLines.size() * sizeof(VertexLine)); vkUnmapMemory(engine.device, gridVboMemory);
 
+    // تهيئة الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
     engine.createBuffer(gizmo.vertices.size() * sizeof(GizmoVertex), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
@@ -140,7 +203,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 }
 
 void VulkanRenderer::cleanup() {
-    box.cleanup(engine);
+    mesh.cleanup(engine);
     engine.destroyBuffer(gizmoVbo, gizmoVboMemory);
     engine.destroyBuffer(gridVbo, gridVboMemory);
     engine.cleanup();
@@ -156,14 +219,17 @@ void VulkanRenderer::renderFrame() {
 
     if (!engine.beginFrame(v, p, eye)) return;
 
-    // 1. رسم شبكة الأرضية
+    // 1. رسم شبكة الأرضية الثابتة
     engine.drawLines(gridVbo, gridVertexCount, Mat4::identity());
 
-    // 2. رسم المكعب وحوافه
-    box.draw(engine);
+    // 2. رسم المجسم وعناصره المحددة
+    mesh.draw(engine);
 
-    // 3. رسم الجزمو
-    engine.drawGizmo(gizmoVbo, gizmoVertexCount, box.getModelMatrix());
+    // 3. رسم الجزمو الديناميكي فقط إذا كان هناك عنصر محدد
+    if (isGizmoVisible) {
+        Mat4 gizmoTransform = mesh.getActiveGizmoOrientation();
+        engine.drawGizmo(gizmoVbo, gizmoVertexCount, gizmoTransform);
+    }
 
     engine.endFrame();
 }
