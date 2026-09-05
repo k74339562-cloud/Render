@@ -298,7 +298,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
 
     VkPipelineRasterizationStateCreateInfo prsi{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
     prsi.cullMode = VK_CULL_MODE_BACK_BIT;
-    prsi.frontFace = VK_FRONT_FACE_CLOCKWISE; // ضبط اتجاه الأوجه لتظهر الأوجه الخارجية بوضوح
+    prsi.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // ضبط اتجاه الأوجه لتظهر الأوجه الخارجية بوضوح
     prsi.lineWidth = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo pmssi{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
