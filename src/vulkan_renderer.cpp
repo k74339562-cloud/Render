@@ -148,7 +148,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* iData; vkMapMemory(device, cubeIboMemory, 0, sizeof(cubeIndices), 0, &iData);
     memcpy(iData, cubeIndices, sizeof(cubeIndices)); vkUnmapMemory(device, cubeIboMemory);
 
-    // 2. خطوط حواف تحديد بلندر البرتقالية المتوهجة (#E86C19) للمكعب النشط
+    // 2. خطوط حواف تحديد بلندر البرتقالية (#E86C19)
     const float er = 0.91f, eg = 0.42f, eb = 0.10f;
     VertexLine cubeEdges[] = {
         {-1,-1,-1, er,eg,eb,1.0f}, { 1,-1,-1, er,eg,eb,1.0f},
@@ -168,7 +168,7 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     void* edgeData; vkMapMemory(device, cubeEdgesVboMemory, 0, sizeof(cubeEdges), 0, &edgeData);
     memcpy(edgeData, cubeEdges, sizeof(cubeEdges)); vkUnmapMemory(device, cubeEdgesVboMemory);
 
-    // 3. شبكة أرضية بلندر الحقيقية: تتضمن المحاور الرئيسية وخطوط التقسيم المتلاشية نحو الأفق
+    // 3. شبكة أرضية بلندر
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -176,9 +176,8 @@ bool VulkanRenderer::init(ANativeWindow* window) {
     for (int i = -gridSize; i <= gridSize; ++i) {
         float fi = (float)i;
         float d = std::abs(fi) / maxDist;
-        float alpha = std::pow(1.0f - d, 1.8f) * 0.40f; // تدريج أسي ناعم كبلندر
+        float alpha = std::pow(1.0f - d, 1.8f) * 0.40f;
 
-        // خطوط المحاور الصريحة
         if (i == 0) {
             gridLines.push_back({-maxDist, 0.0f, -1.0f, 0.92f, 0.23f, 0.32f, 0.95f});
             gridLines.push_back({ maxDist, 0.0f, -1.0f, 0.92f, 0.23f, 0.32f, 0.95f});
@@ -187,7 +186,6 @@ bool VulkanRenderer::init(ANativeWindow* window) {
             continue;
         }
 
-        // خطوط الشبكة الرمادية المنسجمة
         float gc = 0.29f;
         gridLines.push_back({-maxDist, fi, -1.0f, gc, gc, gc, alpha});
         gridLines.push_back({ maxDist, fi, -1.0f, gc, gc, gc, alpha});
@@ -251,6 +249,8 @@ void VulkanRenderer::cleanup() {
 
         for (auto iv : swapchainImageViews) vkDestroyImageView(device, iv, nullptr);
         swapchainImageViews.clear();
+        swapchainImages.clear();
+        commandBuffers.clear();
 
         vkDestroySwapchainKHR(device, swapchain, nullptr);
         vkDestroyDevice(device, nullptr);
@@ -291,7 +291,6 @@ void VulkanRenderer::renderFrame() {
     VkCommandBufferBeginInfo cbbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     vkBeginCommandBuffer(cmd, &cbbi);
 
-    // خلفية استوديو بلندر الرسمية (#343434)
     VkClearValue clearValues[2];
     clearValues[0].color = {{0.204f, 0.204f, 0.204f, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
@@ -306,13 +305,13 @@ void VulkanRenderer::renderFrame() {
 
     VkDeviceSize offsets[] = {0};
 
-    // 1. رسم شبكة أرضية بلندر الشفافة
+    // 1. رسم شبكة أرضية بلندر
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.linePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gridVbo, offsets);
     vkCmdDraw(cmd, gridVertexCount, 1, 0, 0);
 
-    // 2. رسم المكعب المصمت بشيدر بلندر الطيني وخاصية Cavity
+    // 2. رسم المكعب المصمت
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.cubePipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipelineLayout, 0, 1, &pipeline.descriptorSet, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, &cubeVbo, offsets);
@@ -324,7 +323,7 @@ void VulkanRenderer::renderFrame() {
     vkCmdBindVertexBuffers(cmd, 0, 1, &cubeEdgesVbo, offsets);
     vkCmdDraw(cmd, 24, 1, 0, 0);
 
-    // 4. رسم جزمو بلندر الكامل بمربعات المسطحات
+    // 4. رسم جزمو بلندر
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.gizmoPipeline);
     vkCmdBindVertexBuffers(cmd, 0, 1, &gizmoVbo, offsets);
     vkCmdDraw(cmd, gizmoVertexCount, 1, 0, 0);
