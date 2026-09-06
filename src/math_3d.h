@@ -3,6 +3,12 @@
 #include <cstring>
 #include <algorithm>
 
+struct Vec2 {
+    float x = 0.0f, y = 0.0f;
+    Vec2() = default;
+    Vec2(float x, float y) : x(x), y(y) {}
+};
+
 struct Vec3 {
     float x = 0.0f, y = 0.0f, z = 0.0f;
     Vec3() = default;
@@ -149,7 +155,7 @@ struct Mat4 {
                  src[13] * src[2] * src[7] - 
                  src[13] * src[3] * src[6];
 
-        dst[6] = -src[0]  * src[6] * src[15] + 
+        dst[6] = -src[0]  * src[6] * src[15] - 
                   src[0]  * src[7] * src[14] + 
                   src[4]  * src[2] * src[15] - 
                   src[4]  * src[3] * src[14] - 
