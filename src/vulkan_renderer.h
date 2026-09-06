@@ -29,7 +29,7 @@ public:
     VkDeviceMemory gizmoVboMemory = VK_NULL_HANDLE;
     uint32_t gizmoVertexCount = 0;
 
-    // بافر رسم أزرار واجهة بلندر على الشاشة (UI Overlay)
+    // بافر أزرار واجهة بلندر الموحد
     VkBuffer uiVbo = VK_NULL_HANDLE;
     VkDeviceMemory uiVboMemory = VK_NULL_HANDLE;
     uint32_t uiVertexCount = 0;
@@ -44,7 +44,6 @@ public:
     GizmoAxis testGizmoHit(float touchX, float touchY, float screenW, float screenH);
     void dragGizmo(float dx, float dy, float screenW, float screenH);
 
-    // نظام فحص ورسم أزرار واجهة بلندر
     bool handleUITouch(float touchX, float touchY, float screenW, float screenH);
     void updateUIBuffers();
 
