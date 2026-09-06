@@ -4,10 +4,10 @@
 #include "render_engine.h"
 
 enum class SelectionMode {
-    OBJECT = 0, // تحديد كامل المكعب
-    VERTEX = 1, // تحديد النقاط
-    EDGE   = 2, // تحديد الحواف
-    FACE   = 3  // تحديد الأوجه
+    OBJECT = 0,
+    VERTEX = 1,
+    EDGE   = 2,
+    FACE   = 3
 };
 
 struct MeshVertex {
@@ -23,7 +23,7 @@ struct MeshEdge {
 };
 
 struct MeshFace {
-    uint32_t v[4]; // أوجه رباعية Quad كبلندر
+    uint32_t v[4];
     Vec3 normal;
     Vec3 center;
     bool selected = false;
@@ -43,11 +43,16 @@ public:
     std::vector<MeshEdge> edges;
     std::vector<MeshFace> faces;
 
-    // بافرات كرت الشاشة
     VkBuffer faceVbo = VK_NULL_HANDLE;
     VkDeviceMemory faceVboMemory = VK_NULL_HANDLE;
     VkBuffer faceIbo = VK_NULL_HANDLE;
     VkDeviceMemory faceIboMemory = VK_NULL_HANDLE;
+
+    // بافر تلوين الوجه المحدد كبلندر
+    VkBuffer selFaceVbo = VK_NULL_HANDLE;
+    VkDeviceMemory selFaceVboMemory = VK_NULL_HANDLE;
+    VkBuffer selFaceIbo = VK_NULL_HANDLE;
+    VkDeviceMemory selFaceIboMemory = VK_NULL_HANDLE;
 
     VkBuffer edgeVbo = VK_NULL_HANDLE;
     VkDeviceMemory edgeVboMemory = VK_NULL_HANDLE;
@@ -64,11 +69,11 @@ public:
     void deselectAll();
     bool pickObject(const Ray& ray, float& outDist);
     int pickFace(const Ray& ray, float& outDist);
-    int pickEdge(const Ray& ray, float threshold);
-    int pickVertex(const Ray& ray, float threshold);
+    int pickEdgeScreen(const Camera& camera, float touchX, float touchY, float screenW, float screenH, float thresholdPx);
+    int pickVertexScreen(const Camera& camera, float touchX, float touchY, float screenW, float screenH, float thresholdPx);
 
     Vec3 getActiveGizmoPosition() const;
-    Mat4 getActiveGizmoOrientation() const; // حساب التوجيه الخارجي دائماً
+    Mat4 getActiveGizmoOrientation() const;
 
     Mat4 getModelMatrix() const;
     void draw(RenderEngine& engine);
