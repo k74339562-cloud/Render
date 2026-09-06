@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "math_3d.h"
+#include "camera.h"
 #include "render_engine.h"
 
 enum class SelectionMode {
@@ -48,7 +49,6 @@ public:
     VkBuffer faceIbo = VK_NULL_HANDLE;
     VkDeviceMemory faceIboMemory = VK_NULL_HANDLE;
 
-    // بافر تلوين الوجه المحدد كبلندر
     VkBuffer selFaceVbo = VK_NULL_HANDLE;
     VkDeviceMemory selFaceVboMemory = VK_NULL_HANDLE;
     VkBuffer selFaceIbo = VK_NULL_HANDLE;
