@@ -1,10 +1,6 @@
 #pragma once
 #include "math_3d.h"
 
-struct Vec2 {
-    float x = 0.0f, y = 0.0f;
-};
-
 class Camera {
 public:
     Vec3 target = {0.0f, 0.0f, 0.0f};
@@ -22,7 +18,5 @@ public:
     Vec3 getPosition() const;
 
     Vec2 projectToScreen(const Vec3& worldPos, float screenW, float screenH) const;
-    
-    // الدالة المفقودة التي كانت تسبب الخطأ
     Ray getScreenRay(float touchX, float touchY, float screenW, float screenH) const;
 };
