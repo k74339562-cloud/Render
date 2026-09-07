@@ -135,8 +135,9 @@ bool GLESRenderer::init(ANativeWindow* window) {
     if (!engine.init(window)) return false;
 
     mesh.initDefaultCube();
+    ui.init();
 
-    // بناء شبكة بلندر ثلاثية الأبعاد
+    // بناء شبكة بلندر
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -195,6 +196,7 @@ bool GLESRenderer::init(ANativeWindow* window) {
 }
 
 void GLESRenderer::cleanup() {
+    ui.cleanup();
     if (gridVao) { glDeleteVertexArrays(1, &gridVao); gridVao = 0; }
     if (gridVbo) { glDeleteBuffers(1, &gridVbo); gridVbo = 0; }
 
@@ -224,9 +226,9 @@ void GLESRenderer::renderFrame() {
     // 2. رسم المجسم
     mesh.draw(engine);
 
-    // 3. رسم الجزمو (دائماً في المقدمة مثل بلندر بدون حجب بالعمق)
+    // 3. رسم الجزمو في المقدمة
     if (isGizmoVisible && gizmoVao) {
-        glClear(GL_DEPTH_BUFFER_BIT); // مسح بافر العمق ليظهر الجزمو بوضوح فوق المجسم
+        glClear(GL_DEPTH_BUFFER_BIT);
         Mat4 gizmoTransform = mesh.getActiveGizmoOrientation();
         engine.useLineProgram(gizmoTransform);
         glBindVertexArray(gizmoVao);
@@ -234,5 +236,9 @@ void GLESRenderer::renderFrame() {
     }
 
     glBindVertexArray(0);
+
+    // 4. رسم الواجهة العبقرية فوق كل شيء
+    ui.render(screenW, screenH, mesh);
+
     engine.endFrame();
 }
