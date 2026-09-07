@@ -1,8 +1,9 @@
 #pragma once
 #include <vector>
+#include <GLES3/gl3.h>
 #include "math_3d.h"
-#include "camera.h"
-#include "render_engine.h"
+
+class GLESEngine;
 
 enum class SelectionMode {
     OBJECT = 0,
@@ -44,37 +45,29 @@ public:
     std::vector<MeshEdge> edges;
     std::vector<MeshFace> faces;
 
-    VkBuffer faceVbo = VK_NULL_HANDLE;
-    VkDeviceMemory faceVboMemory = VK_NULL_HANDLE;
-    VkBuffer faceIbo = VK_NULL_HANDLE;
-    VkDeviceMemory faceIboMemory = VK_NULL_HANDLE;
+    // بافرات OpenGL ES 3.0
+    GLuint faceVao = 0, faceVbo = 0, faceIbo = 0;
+    uint32_t faceIndexCount = 0;
 
-    VkBuffer selFaceVbo = VK_NULL_HANDLE;
-    VkDeviceMemory selFaceVboMemory = VK_NULL_HANDLE;
-    VkBuffer selFaceIbo = VK_NULL_HANDLE;
-    VkDeviceMemory selFaceIboMemory = VK_NULL_HANDLE;
-
-    VkBuffer edgeVbo = VK_NULL_HANDLE;
-    VkDeviceMemory edgeVboMemory = VK_NULL_HANDLE;
+    GLuint edgeVao = 0, edgeVbo = 0;
     uint32_t edgeVertexCount = 0;
 
-    VkBuffer vertDotsVbo = VK_NULL_HANDLE;
-    VkDeviceMemory vertDotsVboMemory = VK_NULL_HANDLE;
+    GLuint vertDotsVao = 0, vertDotsVbo = 0;
     uint32_t vertDotsCount = 0;
 
-    void initDefaultCube(RenderEngine& engine);
-    void cleanup(RenderEngine& engine);
-    void rebuildBuffers(RenderEngine& engine);
+    void initDefaultCube();
+    void cleanup();
+    void rebuildBuffers();
 
     void deselectAll();
     bool pickObject(const Ray& ray, float& outDist);
     int pickFace(const Ray& ray, float& outDist);
-    int pickEdgeScreen(const Camera& camera, float touchX, float touchY, float screenW, float screenH, float thresholdPx);
-    int pickVertexScreen(const Camera& camera, float touchX, float touchY, float screenW, float screenH, float thresholdPx);
+    int pickEdge(const Ray& ray, float threshold);
+    int pickVertex(const Ray& ray, float threshold);
 
     Vec3 getActiveGizmoPosition() const;
     Mat4 getActiveGizmoOrientation() const;
 
     Mat4 getModelMatrix() const;
-    void draw(RenderEngine& engine);
+    void draw(GLESEngine& engine);
 };
