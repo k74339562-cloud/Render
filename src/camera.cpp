@@ -9,7 +9,6 @@ void Camera::onOrbit(float dx, float dy) {
 
 void Camera::onZoom(float ratio) {
     if (ratio <= 0.001f) return;
-    // كود الزوم الخاص بك المعتمد
     dist = std::clamp(dist / ratio, 1.0f, 50.0f);
 }
 
@@ -43,15 +42,15 @@ Mat4 Camera::getViewMatrix() const {
 Mat4 Camera::getProjectionMatrix(float width, float height) const {
     float aspect = (height > 0.0f) ? (width / height) : 1.0f;
     float fovRad = 45.0f * (3.14159265f / 180.0f);
-    float nearZ = 0.01f, farZ = 250.0f;
+    float nearZ = 0.1f, farZ = 250.0f;
 
     Mat4 r;
     float tanHalf = std::tan(fovRad * 0.5f);
     r.m[0] = 1.0f / (aspect * tanHalf);
     r.m[5] = 1.0f / tanHalf;
-    r.m[10] = farZ / (nearZ - farZ);
+    r.m[10] = -(farZ + nearZ) / (farZ - nearZ);
     r.m[11] = -1.0f;
-    r.m[14] = -(farZ * nearZ) / (farZ - nearZ);
+    r.m[14] = -(2.0f * farZ * nearZ) / (farZ - nearZ);
     return r;
 }
 
@@ -70,7 +69,7 @@ Ray Camera::getScreenRay(float touchX, float touchY, float screenW, float screen
 
     Mat4 invVP = (getProjectionMatrix(screenW, screenH) * getViewMatrix()).inverse();
 
-    Vec3 pNear = invVP.transformPoint(Vec3(ndcX, ndcY, 0.0f));
+    Vec3 pNear = invVP.transformPoint(Vec3(ndcX, ndcY, -1.0f));
     Vec3 pFar  = invVP.transformPoint(Vec3(ndcX, ndcY, 1.0f));
 
     Ray ray;
