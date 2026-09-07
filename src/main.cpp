@@ -60,6 +60,12 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->downX = x; s->downY = y;
                 s->lastX = x; s->lastY = y;
 
+                // 1. فحص لمس أزرار الواجهة أولاً
+                if (s->renderer.ui.handleTouch(x, y, true, s->renderer.mesh)) {
+                    s->state = NAV_IDLE;
+                    return 1; // استهلاك اللمس للأزرار فقط دون تدوير الكاميرا
+                }
+
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - s->lastTapTime).count();
                 s->lastTapTime = now;
@@ -70,6 +76,7 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                     return 1;
                 }
 
+                // 2. فحص لمس الجزمو
                 GizmoAxis hit = s->renderer.testGizmoHit(x, y, screenW, screenH);
                 if (hit != AXIS_NONE) {
                     s->renderer.activeAxis = hit;
