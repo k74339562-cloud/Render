@@ -17,6 +17,7 @@ set(SOURCES
     src/mesh_data.cpp
     src/gles_engine.cpp
     src/gles_renderer.cpp
+    src/ui.cpp
     ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c
 )
 
