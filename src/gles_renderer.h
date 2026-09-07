@@ -4,6 +4,7 @@
 #include "camera.h"
 #include "gizmo.h"
 #include "mesh_data.h"
+#include "ui.h"
 
 enum GizmoAxis {
     AXIS_NONE = 0,
@@ -19,6 +20,7 @@ public:
     Camera camera;
     Gizmo gizmo;
     MeshData mesh;
+    UIManager ui;
 
     GLuint gridVao = 0, gridVbo = 0;
     uint32_t gridVertexCount = 0;
