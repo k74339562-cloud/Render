@@ -2,12 +2,12 @@
 #include <android/input.h>
 #include <cmath>
 #include <chrono>
-#include "vulkan_renderer.h"
+#include "gles_renderer.h"
 
 enum NavState { NAV_IDLE, NAV_ORBIT, NAV_ZOOM_PAN, NAV_GIZMO_DRAG };
 
 struct AppState {
-    VulkanRenderer renderer;
+    GLESRenderer renderer;
     NavState state = NAV_IDLE;
     bool animating = false;
 
@@ -37,8 +37,8 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
         int masked = action & AMOTION_EVENT_ACTION_MASK;
         size_t count = AMotionEvent_getPointerCount(event);
 
-        float screenW = (float)s->renderer.engine.swapchainExtent.width;
-        float screenH = (float)s->renderer.engine.swapchainExtent.height;
+        float screenW = (float)s->renderer.engine.width;
+        float screenH = (float)s->renderer.engine.height;
 
         if (masked == AMOTION_EVENT_ACTION_UP || masked == AMOTION_EVENT_ACTION_CANCEL) {
             if (s->state == NAV_ORBIT || s->state == NAV_IDLE) {
@@ -60,12 +60,6 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                 s->downX = x; s->downY = y;
                 s->lastX = x; s->lastY = y;
 
-                // 1. فحص لمس أزرار واجهة بلندر العلوية أولاً
-                if (s->renderer.handleUITouch(x, y, screenW, screenH)) {
-                    s->state = NAV_IDLE;
-                    return 1; // استهلاك اللمس للأزرار فقط دون تدوير الكاميرا
-                }
-
                 auto now = std::chrono::steady_clock::now();
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - s->lastTapTime).count();
                 s->lastTapTime = now;
@@ -76,7 +70,6 @@ static int32_t onInput(struct android_app* app, AInputEvent* event) {
                     return 1;
                 }
 
-                // 2. فحص لمس الجزمو
                 GizmoAxis hit = s->renderer.testGizmoHit(x, y, screenW, screenH);
                 if (hit != AXIS_NONE) {
                     s->renderer.activeAxis = hit;
