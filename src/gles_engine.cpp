@@ -3,21 +3,24 @@
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "GLESEngine", __VA_ARGS__)
 
-// 1. شيدر المجسم: إضاءة استوديو بلندر الرباعية (Clay Studio Lighting)
+// شيدر المجسم المطور: يدعم الإضاءة + تلوين الوجه المحدد فورياً
 static const char* MESH_VERT = R"(#version 300 es
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec3 inColor;
 
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 
 out vec3 fragNormal;
 out vec3 fragWorldPos;
+out vec3 fragColor;
 
 void main() {
     vec4 worldPos = uModel * vec4(inPosition, 1.0);
     fragWorldPos = worldPos.xyz;
     fragNormal = mat3(uModel) * inNormal;
+    fragColor = inColor;
     gl_Position = uViewProj * worldPos;
 }
 )";
@@ -27,6 +30,7 @@ precision highp float;
 
 in vec3 fragNormal;
 in vec3 fragWorldPos;
+in vec3 fragColor;
 
 uniform vec3 uCamPos;
 out vec4 outColor;
@@ -40,7 +44,7 @@ void main() {
     if (length(camRight) < 0.001) camRight = vec3(1.0, 0.0, 0.0);
     vec3 camUp = cross(camFwd, camRight);
 
-    // إضاءة بلندر الاستوديو
+    // إضاءة استوديو بلندر الرباعية
     vec3 keyDir = normalize(camRight * 0.50 + camUp * 0.70 - camFwd * 0.50);
     vec3 keyCol = vec3(1.0, 0.98, 0.95);
     float diffKey = max(dot(N, keyDir), 0.0);
@@ -63,17 +67,14 @@ void main() {
     float fresnel = pow(1.0 - NdotV, 3.5) * 0.35;
     vec3 fresnelCol = vec3(0.95, 0.98, 1.0) * fresnel;
 
-    vec3 baseClay = vec3(0.68, 0.68, 0.71);
     vec3 ambient = vec3(0.20, 0.20, 0.22);
-
     vec3 totalLight = ambient + (keyCol * diffKey) + (fillCol * diffFill) + (rimCol * diffRim) + (bounceCol * diffBounce);
-    vec3 linearColor = (baseClay * totalLight) + vec3(spec) + fresnelCol;
+    vec3 linearColor = (fragColor * totalLight) + vec3(spec) + fresnelCol;
 
     outColor = vec4(pow(linearColor, vec3(1.0 / 2.2)), 1.0);
 }
 )";
 
-// 2. شيدر الخطوط والألوان (للشبكة والجزمو وتحديد الحواف والنقاط)
 static const char* LINE_VERT = R"(#version 300 es
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec4 inColor;
@@ -173,7 +174,6 @@ bool GLESEngine::init(ANativeWindow* window) {
     width = ANativeWindow_getWidth(window);
     height = ANativeWindow_getHeight(window);
 
-    // بناء الشيدرات
     meshProgram = buildProgram(MESH_VERT, MESH_FRAG);
     uMeshViewProj = glGetUniformLocation(meshProgram, "uViewProj");
     uMeshModel = glGetUniformLocation(meshProgram, "uModel");
@@ -212,7 +212,6 @@ void GLESEngine::beginFrame(const Mat4& viewProj, const Vec3& camPos) {
     currentCamPos = camPos;
 
     glViewport(0, 0, width, height);
-    // لون خلفية استوديو بلندر الأصلية (#343434)
     glClearColor(0.204f, 0.204f, 0.204f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
