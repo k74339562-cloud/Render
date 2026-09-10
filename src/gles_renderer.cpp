@@ -10,10 +10,7 @@ static float distToScreenSegment(float tx, float ty, const Vec2& p0, const Vec2&
     float c1 = wx * vx + wy * vy;
     if (c1 <= 0.0f) return std::sqrt(wx * wx + wy * wy);
     float c2 = vx * vx + vy * vy;
-    if (c2 <= c1) {
-        float dx = tx - p1.x, dy = ty - p1.y;
-        return std::sqrt(dx * dx + dy * dy);
-    }
+    if (c2 <= c1) return std::sqrt(dx * dx + dy * dy);
     float b = c1 / c2;
     float px = p0.x + b * vx, py = p0.y + b * vy;
     float dx = tx - px, dy = ty - py;
@@ -30,8 +27,8 @@ GizmoAxis GLESRenderer::testGizmoHit(float touchX, float touchY, float screenW, 
     Vec3 dirZ = Vec3(gOrient.m[8], gOrient.m[9], gOrient.m[10]);
 
     Vec2 pCenter = camera.projectToScreen(gPos, screenW, screenH);
-    float distCenter = std::sqrt((touchX - pCenter.x) * (touchX - pCenter.x) + (touchY - pCenter.y) * (touchY - pCenter.y));
-    if (distCenter < 38.0f) return AXIS_CENTER;
+    float distCenter = std::hypot(touchX - pCenter.x, touchY - pCenter.y);
+    if (distCenter < 40.0f) return AXIS_CENTER;
 
     float shaftLen = 1.8f;
     Vec2 pX = camera.projectToScreen(gPos + dirX * shaftLen, screenW, screenH);
@@ -65,7 +62,22 @@ void GLESRenderer::dragGizmo(float dx, float dy, float screenW, float screenH) {
         Vec3 camRight = {-cosY, sinY, 0.0f};
         Vec3 camUp = {-sinY * std::sin(camera.pitch), -cosY * std::sin(camera.pitch), std::cos(camera.pitch)};
         Vec3 deltaMove = (camRight * (dx * worldUnitsPerPixel)) + (camUp * (-dy * worldUnitsPerPixel));
-        mesh.position = mesh.position + deltaMove;
+
+        if (mesh.selectMode == SelectionMode::OBJECT || !mesh.isObjectSelected) {
+            mesh.position = mesh.position + deltaMove;
+        } else if (mesh.selectMode == SelectionMode::VERTEX && mesh.selectedVertexIdx >= 0) {
+            mesh.vertices[mesh.selectedVertexIdx].pos = mesh.vertices[mesh.selectedVertexIdx].pos + deltaMove;
+            mesh.rebuildBuffers();
+        } else if (mesh.selectMode == SelectionMode::EDGE && mesh.selectedEdgeIdx >= 0) {
+            mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v0].pos = mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v0].pos + deltaMove;
+            mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v1].pos = mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v1].pos + deltaMove;
+            mesh.rebuildBuffers();
+        } else if (mesh.selectMode == SelectionMode::FACE && mesh.selectedFaceIdx >= 0) {
+            for (int i = 0; i < 4; ++i) {
+                mesh.vertices[mesh.faces[mesh.selectedFaceIdx].v[i]].pos = mesh.vertices[mesh.faces[mesh.selectedFaceIdx].v[i]].pos + deltaMove;
+            }
+            mesh.rebuildBuffers();
+        }
         return;
     }
 
@@ -79,19 +91,35 @@ void GLESRenderer::dragGizmo(float dx, float dy, float screenW, float screenH) {
 
     float screenDirX = pTip.x - pCenter.x;
     float screenDirY = pTip.y - pCenter.y;
-    float len = std::sqrt(screenDirX * screenDirX + screenDirY * screenDirY);
+    float len = std::hypot(screenDirX, screenDirY);
     if (len < 0.001f) return;
 
     screenDirX /= len; screenDirY /= len;
     float dotMove = (dx * screenDirX) + (dy * screenDirY);
-    mesh.position = mesh.position + (axisDir3D * (dotMove * worldUnitsPerPixel));
+    Vec3 deltaMove = axisDir3D * (dotMove * worldUnitsPerPixel);
+
+    if (mesh.selectMode == SelectionMode::OBJECT || !mesh.isObjectSelected) {
+        mesh.position = mesh.position + deltaMove;
+    } else if (mesh.selectMode == SelectionMode::VERTEX && mesh.selectedVertexIdx >= 0) {
+        mesh.vertices[mesh.selectedVertexIdx].pos = mesh.vertices[mesh.selectedVertexIdx].pos + deltaMove;
+        mesh.rebuildBuffers();
+    } else if (mesh.selectMode == SelectionMode::EDGE && mesh.selectedEdgeIdx >= 0) {
+        mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v0].pos = mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v0].pos + deltaMove;
+        mesh.vertices[mesh.edges[mesh.edges[mesh.selectedEdgeIdx].v1].pos] = mesh.vertices[mesh.edges[mesh.selectedEdgeIdx].v1].pos + deltaMove;
+        mesh.rebuildBuffers();
+    } else if (mesh.selectMode == SelectionMode::FACE && mesh.selectedFaceIdx >= 0) {
+        for (int i = 0; i < 4; ++i) {
+            mesh.vertices[mesh.faces[mesh.selectedFaceIdx].v[i]].pos = mesh.vertices[mesh.faces[mesh.selectedFaceIdx].v[i]].pos + deltaMove;
+        }
+        mesh.rebuildBuffers();
+    }
 }
 
 void GLESRenderer::handleTapSelection(float touchX, float touchY, float screenW, float screenH) {
     Ray ray = camera.getScreenRay(touchX, touchY, screenW, screenH);
-    float dist = 0.0f;
 
     if (mesh.selectMode == SelectionMode::OBJECT) {
+        float dist = 0.0f;
         if (mesh.pickObject(ray, dist)) {
             mesh.isObjectSelected = true;
             isGizmoVisible = true;
@@ -99,8 +127,9 @@ void GLESRenderer::handleTapSelection(float touchX, float touchY, float screenW,
             mesh.deselectAll();
             isGizmoVisible = false;
         }
-    } else if (mesh.selectMode == SelectionMode::FACE) {
-        int fIdx = mesh.pickFace(ray, dist);
+    } 
+    else if (mesh.selectMode == SelectionMode::FACE) {
+        int fIdx = mesh.pickFace(ray, camera);
         if (fIdx != -1) {
             mesh.selectedFaceIdx = fIdx;
             isGizmoVisible = true;
@@ -108,8 +137,9 @@ void GLESRenderer::handleTapSelection(float touchX, float touchY, float screenW,
             mesh.deselectAll();
             isGizmoVisible = false;
         }
-    } else if (mesh.selectMode == SelectionMode::EDGE) {
-        int eIdx = mesh.pickEdge(ray, 0.25f);
+    } 
+    else if (mesh.selectMode == SelectionMode::EDGE) {
+        int eIdx = mesh.pickEdge(touchX, touchY, screenW, screenH, camera, 55.0f);
         if (eIdx != -1) {
             mesh.selectedEdgeIdx = eIdx;
             isGizmoVisible = true;
@@ -117,8 +147,9 @@ void GLESRenderer::handleTapSelection(float touchX, float touchY, float screenW,
             mesh.deselectAll();
             isGizmoVisible = false;
         }
-    } else if (mesh.selectMode == SelectionMode::VERTEX) {
-        int vIdx = mesh.pickVertex(ray, 0.25f);
+    } 
+    else if (mesh.selectMode == SelectionMode::VERTEX) {
+        int vIdx = mesh.pickVertex(touchX, touchY, screenW, screenH, camera, 60.0f);
         if (vIdx != -1) {
             mesh.selectedVertexIdx = vIdx;
             isGizmoVisible = true;
@@ -137,7 +168,6 @@ bool GLESRenderer::init(ANativeWindow* window) {
     mesh.initDefaultCube();
     ui.init();
 
-    // بناء شبكة بلندر
     std::vector<VertexLine> gridLines;
     int gridSize = 20;
     float maxDist = (float)gridSize;
@@ -175,7 +205,6 @@ bool GLESRenderer::init(ANativeWindow* window) {
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(VertexLine), (void*)(3 * sizeof(float)));
 
-    // بناء مجسم الجزمو
     gizmo.init();
     gizmoVertexCount = (uint32_t)gizmo.vertices.size();
 
@@ -223,10 +252,10 @@ void GLESRenderer::renderFrame() {
     glBindVertexArray(gridVao);
     glDrawArrays(GL_LINES, 0, gridVertexCount);
 
-    // 2. رسم المجسم
+    // 2. رسم المجسم (الأوجه مع تمييز الوجه المختار بالبرتقالي + الحواف + النقاط)
     mesh.draw(engine);
 
-    // 3. رسم الجزمو في المقدمة
+    // 3. رسم الجزمو
     if (isGizmoVisible && gizmoVao) {
         glClear(GL_DEPTH_BUFFER_BIT);
         Mat4 gizmoTransform = mesh.getActiveGizmoOrientation();
@@ -237,7 +266,7 @@ void GLESRenderer::renderFrame() {
 
     glBindVertexArray(0);
 
-    // 4. رسم الواجهة العبقرية فوق كل شيء
+    // 4. رسم الأزرار
     ui.render(screenW, screenH, mesh);
 
     engine.endFrame();
