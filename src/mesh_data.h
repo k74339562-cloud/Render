@@ -2,6 +2,7 @@
 #include <vector>
 #include <GLES3/gl3.h>
 #include "math_3d.h"
+#include "camera.h"
 
 class GLESEngine;
 
@@ -45,7 +46,6 @@ public:
     std::vector<MeshEdge> edges;
     std::vector<MeshFace> faces;
 
-    // بافرات OpenGL ES 3.0
     GLuint faceVao = 0, faceVbo = 0, faceIbo = 0;
     uint32_t faceIndexCount = 0;
 
@@ -60,10 +60,12 @@ public:
     void rebuildBuffers();
 
     void deselectAll();
+
+    // دوال التحديد الحقيقي المعتمدة على بكسلات الشاشة وحجب الأجزاء الخلفية
     bool pickObject(const Ray& ray, float& outDist);
-    int pickFace(const Ray& ray, float& outDist);
-    int pickEdge(const Ray& ray, float threshold);
-    int pickVertex(const Ray& ray, float threshold);
+    int pickFace(const Ray& ray, const Camera& camera);
+    int pickVertex(float touchX, float touchY, float screenW, float screenH, const Camera& camera, float maxPixelDist = 55.0f);
+    int pickEdge(float touchX, float touchY, float screenW, float screenH, const Camera& camera, float maxPixelDist = 45.0f);
 
     Vec3 getActiveGizmoPosition() const;
     Mat4 getActiveGizmoOrientation() const;
