@@ -55,12 +55,22 @@ Mat4 Camera::getProjectionMatrix(float width, float height) const {
 }
 
 Vec2 Camera::projectToScreen(const Vec3& worldPos, float screenW, float screenH) const {
+    Vec2 out;
+    projectToScreenSafe(worldPos, screenW, screenH, out);
+    return out;
+}
+
+bool Camera::projectToScreenSafe(const Vec3& worldPos, float screenW, float screenH, Vec2& outScreen) const {
+    Vec3 toPoint = worldPos - getPosition();
+    Vec3 fwd = (target - getPosition()).normalize();
+    if (toPoint.dot(fwd) <= 0.05f) return false; // النقطة خلف عين الكاميرا
+
     Mat4 vp = getProjectionMatrix(screenW, screenH) * getViewMatrix();
     Vec3 ndc = vp.transformPoint(worldPos);
 
-    float px = (ndc.x + 1.0f) * 0.5f * screenW;
-    float py = (1.0f - ndc.y) * 0.5f * screenH;
-    return {px, py};
+    outScreen.x = (ndc.x + 1.0f) * 0.5f * screenW;
+    outScreen.y = (1.0f - ndc.y) * 0.5f * screenH;
+    return true;
 }
 
 Ray Camera::getScreenRay(float touchX, float touchY, float screenW, float screenH) const {
