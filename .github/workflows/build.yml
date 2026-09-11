@@ -10,7 +10,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Java JDK
         uses: actions/setup-java@v5
@@ -19,7 +19,7 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install NDK and Khronos Shader Tools
         run: |
@@ -54,7 +54,7 @@ jobs:
           ${{ env.ANDROID_HOME }}/build-tools/34.0.0/apksigner sign --ks release.keystore --ks-pass pass:password123 --key-pass pass:password123 --out build/Render-Official.apk build/RenderApp.apk
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Render-Engine-Vulkan
           path: build/Render-Official.apk
